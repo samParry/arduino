@@ -1,5 +1,5 @@
 /****************************************************************
-  Author Name:Kenzie Hoggan () & Sam Parry ()
+  Author Name: Kenzie Hoggan () & Sam Parry ()
   Date: 11/14/19
   Sketch Name: Demo4
   Sketch Description: Demonstrates the full functionality of Earl in all of his glory
@@ -22,6 +22,7 @@
  ** #defines and #includes **
  ****************************/
 #include <Servo.h>
+
 /***********************
  ** Global Variables ***
  ***********************/
@@ -118,7 +119,6 @@ void setup(void) {
 
   // *** Initialize Serial Communication ***
   Serial.begin(9600);
-  // Serial.begin(57600);
   Serial.write('a');
 
   // *** Take Initial Readings ***
@@ -232,8 +232,6 @@ void loop(void) {
     while (true) {      // creates an infinite loop to block all other code
     }
   }
-
-
 } // end loop() function
 
 /****************************
@@ -393,7 +391,7 @@ float RangeAngle(float d[], float kappa, float lambda) {                   // Fi
     thetaL = thetaL + 0.05;                             // increases thetaL y .05 degrees each pass through the loop
     xLand = LandingDistance(d, kappa, lambda, thetaL);             // computes an updated value for xland
 
-    if (xLand > range) {                              // holds on the the maximum landing distances and returns the corresponding launch angle
+    if (xLand > range) {                                // holds on the the maximum landing distances and returns the corresponding launch angle
       range = xLand;
       rangeAngle = thetaL;
     }
@@ -420,10 +418,7 @@ float ThetaServo(float H[], float thetaL, float alpha, float beta, float thetaLO
   return thetaS;
 }
 
-
-
 // create a function LaunchAngle to compute the "steep" launch angle to hit a target at ta specified distance
-
 float LaunchAngle(float d[], float kappa, float lambda, float xTarget) {
   float angleLaunch = RangeAngle(d, kappa, lambda);
   float xLand = LandingDistance(d, kappa, lambda, angleLaunch);
@@ -495,8 +490,6 @@ for (int i = 0; i < 6; ++i) {
     }
   }
 }
-
-
 
 void FinalOrder(void) {
   byte encoder0 = driveTo[0];

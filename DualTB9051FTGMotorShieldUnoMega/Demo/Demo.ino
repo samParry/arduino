@@ -17,6 +17,7 @@ void loop() {
   // put your main code here, to run repeatedly:
   double t = micros() / 1000000.0; //current time
   int M = 400 * sin(2 * PI * f * t); //Sinusoid motor voltage command
+  // M can be +-400
   // Turn on Motor 1 for 4 seconds /////////////////////////////////////////
   if (0.0 < t && t < 4.0) {
     md.setM1Speed(M);
