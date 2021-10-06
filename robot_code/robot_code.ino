@@ -16,12 +16,12 @@
  ** Global Variables ***
  ***********************/
 // *Declare pins*
-const int pin_motor_w1 = 31;
-const int pin_motor_w2 = 30;
+const int pin_motor_w1 = 3;
+const int pin_motor_w2 = 5;
 
-const int pin_servo_w = 45;
-const int pin_servo_c = 44;
-const int pin_servo_h = 46;
+const int pin_servo_w = 46;
+const int pin_servo_c = 45;
+const int pin_servo_h = 44;
 
 // *Servo variables*
 Servo servoW;
@@ -30,6 +30,9 @@ Servo servoH;
  
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
+
+// *Communication*
+
 
 // *State Variables*
 String state = "instrument";
@@ -48,7 +51,7 @@ void setup() {
   pinMode(pin_motor_w2, OUTPUT);
   
   // *Initialize communication*
-//  Serial.begin(9600);
+  //  Serial.begin(9600);
 
 // *Initialize motor driver*
   mshield.init();
@@ -57,26 +60,22 @@ void setup() {
 }
 
 void loop() {
-  servoC.write(110);
-  delay(1000);
-  servoC.write(180);
-  delay(1000);
-//  if (state == "instrument") {
-//    test_instrument_motor(pin_motor_w1, pin_motor_w2);
-//    state = "drive";
-//  }
-//  if (state == "drive") {
-//    test_drive_motors(mshield);
-//    state = "turn";
-//  }
-//  if (state == "turn") {
-//    test_turn(mshield);
-//    state = "servos";
-//  }
-//  if (state == "servos") {
-//    test_servos(servoW, servoC, servoH);
-//    state = "instrument";
-//  }
+  if (state == "instrument") {
+    test_instrument_motor(pin_motor_w1, pin_motor_w2);
+    state = "drive";
+  }
+  if (state == "drive") {
+    test_drive_motors(mshield);
+    state = "turn";
+  }
+  if (state == "turn") {
+    test_turn(mshield);
+    state = "servos";
+  }
+  if (state == "servos") {
+    test_servos(servoW, servoC, servoH);
+    state = "instrument";
+  }
 }
 
 /****************************
@@ -110,7 +109,7 @@ void test_servos(Servo servo1, Servo servoC, Servo servo3){
   delay(1000);
   servo1.write(angle1);
   delay(1000);
-  servoC.write(150);
+  servoC.write(110);
   delay(1000);
   servoC.write(180);
   delay(1000);
