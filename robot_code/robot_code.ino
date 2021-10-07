@@ -9,6 +9,7 @@
 /****************************
  ** #defines and #includes **
  ****************************/
+#include <SoftwareSerial.h>
 #include <Servo.h>
 #include "DualTB9051FTGMotorShieldUnoMega.h"
 
@@ -32,10 +33,11 @@ Servo servoH;
 DualTB9051FTGMotorShieldUnoMega mshield;
 
 // *Communication*
-
+SoftwareSerial mySerial(11, 13); // RX, TX
 
 // *State Variables*
-String state = "instrument";
+String state = "";
+char state_char = 'a';  // 'a' is default char
 
 void setup() {
 
@@ -44,37 +46,46 @@ void setup() {
   servoC.attach(pin_servo_c);
   servoH.attach(pin_servo_h);
   servoW.write(0);
-  servoC.write(180);  // 180 - 110 degrees
-  servoH.write(0);
+  servoC.write(170);  // 180 - 110 degrees
+  servoH.write(90);
 
   pinMode(pin_motor_w1, OUTPUT);
   pinMode(pin_motor_w2, OUTPUT);
   
   // *Initialize communication*
-  //  Serial.begin(9600);
+  mySerial.begin(9600);
 
-// *Initialize motor driver*
+  // *Initialize motor driver*
   mshield.init();
   mshield.enableDrivers();
   mshield.flipM2(true);
 }
 
 void loop() {
-  if (state == "instrument") {
+  if (mySerial.available()){        // message sent from Uno
+    state_char = mySerial.read();   // read a single character sent from Uno
+    mySerial.read();                // clear new line character from buffer
+    delay(2);
+  }
+  if (state == "instrument" or state_char == 'i') {
     test_instrument_motor(pin_motor_w1, pin_motor_w2);
-    state = "drive";
+    state_char = 'a';
+    //state = "drive";
   }
-  if (state == "drive") {
+  if (state == "drive" or state_char == 'd') {
     test_drive_motors(mshield);
-    state = "turn";
+    state_char = 'a';
+    //state = "turn";
   }
-  if (state == "turn") {
+  if (state == "turn" or state_char == 't') {
     test_turn(mshield);
-    state = "servos";
+    state_char = 'a';
+    //state = "servos";
   }
-  if (state == "servos") {
+  if (state == "servos" or state_char == 's') {
     test_servos(servoW, servoC, servoH);
-    state = "instrument";
+    state_char = 'a';
+    //state = "instrument";
   }
 }
 
@@ -84,9 +95,9 @@ void loop() {
 
 void test_instrument_motor(int pin_motor_w1, int pin_motor_w2) {
   instrument_motor_d1(pin_motor_w1, pin_motor_w2);
-  delay(1000);
+  delay(2000);
   instrument_motor_d2(pin_motor_w1, pin_motor_w2);
-  delay(1000);
+  delay(2000);
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, LOW);
 }
@@ -101,47 +112,40 @@ void instrument_motor_d2(int pin_motor_w1, int pin_motor_w2) {
   digitalWrite(pin_motor_w2, HIGH);
 }
 
-void test_servos(Servo servo1, Servo servoC, Servo servo3){
-  int angle1 = 0;
-  int angle2 = 90;
-  
-  servo1.write(angle2);
+void test_servos(Servo servoW, Servo servoC, Servo servoH){
+  servoW.write(45);
   delay(1000);
-  servo1.write(angle1);
+  servoW.write(0);
   delay(1000);
   servoC.write(110);
   delay(1000);
-  servoC.write(180);
+  servoC.write(170);
   delay(1000);
-  servo3.write(angle2);
+  servoH.write(120);
   delay(1000);
-  servo3.write(angle1);
+  servoH.write(90);
   delay(1000);
 }
 
 void test_drive_motors(DualTB9051FTGMotorShieldUnoMega mshield){
   // Turn drive motors in both directions for 1 second
-  int motor_power = 400;
+  int motor_power = 250;
   mshield.setM1Speed(motor_power);
-  delay(1000);
-  mshield.setM1Speed(0);
-  delay(1000);
-  mshield.setM1Speed(-motor_power);
-  delay(1000);
-  mshield.setM1Speed(0);
-  delay(1000);
   mshield.setM2Speed(motor_power);
   delay(1000);
+  mshield.setM1Speed(0);
   mshield.setM2Speed(0);
   delay(1000);
+  mshield.setM1Speed(-motor_power);
   mshield.setM2Speed(-motor_power);
   delay(1000);
+  mshield.setM1Speed(0);
   mshield.setM2Speed(0);
   delay(1000);
 }
 
 void test_turn(DualTB9051FTGMotorShieldUnoMega mshield) {
-  int power = 400;
+  int power = 250;
   
   // Turn 1
   mshield.setM1Speed(power);
@@ -154,13 +158,9 @@ void test_turn(DualTB9051FTGMotorShieldUnoMega mshield) {
   // Turn 2
   mshield.setM1Speed(-power);
   mshield.setM2Speed(power);
-  delay(1000);
+  delay(2000);
   mshield.setM1Speed(0);
   mshield.setM2Speed(0);
   delay(1000);
 }
-
-
-
-
  
