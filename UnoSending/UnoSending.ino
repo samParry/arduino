@@ -1,5 +1,7 @@
 #include <SoftwareSerial.h>
 SoftwareSerial mySerial(2, 3); // RX, TX
+String message;
+String message_from_mega;
 
 void setup()  
 {
@@ -16,9 +18,10 @@ void setup()
 void loop() // run over and over
 {
   if(Serial.available()){
-    mySerial.write(Serial.read());
-    Serial.read();
-    delay(50);
+    message = Serial.readStringUntil('\n');
+    mySerial.println(message);
+    Serial.read();  // clear new line from buffer
+    delay(10);
     Serial.println("Message Sent");
   }
 }

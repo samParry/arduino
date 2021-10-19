@@ -9,7 +9,6 @@
 /****************************
  ** #defines and #includes **
  ****************************/
-#include <SoftwareSerial.h>
 #include <Servo.h>
 #include "DualTB9051FTGMotorShieldUnoMega.h"
 
@@ -32,12 +31,11 @@ Servo servoH;
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
 
-// *Communication*
-SoftwareSerial mySerial(11, 13); // RX, TX
-
 // *State Variables*
-String state = "";
-char state_char = 'a';  // 'a' is default char
+String state = "Default";
+
+// *Time Variable*
+double t;
 
 void setup() {
 
@@ -50,10 +48,10 @@ void setup() {
   servoH.write(90);
 
   pinMode(pin_motor_w1, OUTPUT);
-  pinMode(pin_motor_w2, OUTPUT);
+  pinMode(pin_motor_w2, OUTPUT);s
   
   // *Initialize communication*
-  mySerial.begin(9600);
+  Serial2.begin(9600);
 
   // *Initialize motor driver*
   mshield.init();
@@ -62,29 +60,25 @@ void setup() {
 }
 
 void loop() {
-  if (mySerial.available()){        // message sent from Uno
-    state_char = mySerial.read();   // read a single character sent from Uno
-    mySerial.read();                // clear new line character from buffer
-    delay(2);
+  if (Serial2.available()){                   // message sent from Uno
+    state = Serial2.readStringUntil('\n');    // read a single character sent from Uno
+    Serial2.read();                           // clear new line character from buffer
+    delay(10);
   }
-  if (state == "instrument" or state_char == 'i') {
+  if (state == "instrument") {
     test_instrument_motor(pin_motor_w1, pin_motor_w2);
-    state_char = 'a';
     //state = "drive";
   }
-  if (state == "drive" or state_char == 'd') {
+  else if (state == "drive") {
     test_drive_motors(mshield);
-    state_char = 'a';
     //state = "turn";
   }
-  if (state == "turn" or state_char == 't') {
+  else if (state == "turn") {
     test_turn(mshield);
-    state_char = 'a';
     //state = "servos";
   }
-  if (state == "servos" or state_char == 's') {
+  else if (state == "servos") {
     test_servos(servoW, servoC, servoH);
-    state_char = 'a';
     //state = "instrument";
   }
 }
