@@ -17,20 +17,20 @@ void setup() {
   while(Serial2.available()==0);
   inString = Serial2.readStringUntil(' ');
   Kp = inString.toFloat();
-  inString = Serial2.readStringUntil(' ');
-  Kd = inString.toFloat();
-  inString = Serial2.readStringUntil(' ');
-  Ki = inString.toFloat();
+//  inString = Serial2.readStringUntil(' ');
+//  Kd = inString.toFloat();
+//  inString = Serial2.readStringUntil(' ');
+//  Ki = inString.toFloat();
   inString = Serial2.readStringUntil(' ');
   base_speed = inString.toFloat();
   
   t0 = micros()/1000000.;
   Serial2.print("Kp = ");
   Serial2.println(Kp);
-  Serial2.print("Kd = ");
-  Serial2.println(Kd);
-  Serial2.print("Ki = ");
-  Serial2.println(Ki);
+//  Serial2.print("Kd = ");
+//  Serial2.println(Kd);
+//  Serial2.print("Ki = ");
+//  Serial2.println(Ki);
   Serial2.print("Base Speed = ");
   Serial2.println(base_speed);
 }

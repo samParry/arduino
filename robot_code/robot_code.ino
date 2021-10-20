@@ -9,8 +9,10 @@
 /****************************
  ** #defines and #includes **
  ****************************/
-#include <Servo.h>
-#include "DualTB9051FTGMotorShieldUnoMega.h"
+#include <Servo.h>;
+#include <SharpDistSensor.h>;
+#include <QTRSensors.h>;
+#include "DualTB9051FTGMotorShieldUnoMega.h";
 
 /***********************
  ** Global Variables ***
@@ -23,6 +25,29 @@ const int pin_servo_w = 46;
 const int pin_servo_c = 45;
 const int pin_servo_h = 44;
 
+const uint8_t pins_qtr1[] = {22, 24, 26, 28, 30, 32, 34, 36};
+const uint8_t pins_qtr2[] = {23, 25, 27, 29, 31, 33, 35, 37};
+
+const byte pin_sharpL = A10;
+const byte pin_sharpR = A11;
+const byte pin_sharpF = A12;
+
+// *Reflectant Sensor Variables*
+QTRSensors qtr1;
+QTRSensors qtr2;
+int16_t qtr1_biases[] = {2171, 1796, 1693, 1507, 1556, 1789, 1739, 2208};
+int16_t qtr2_biases[] = {2169, 1811, 1710, 1518, 1560, 1793, 1746, 2215};
+int16_t qtr1_vals[8];
+int16_t qtr2_vals[8];
+
+// *Sharp IR Variables*
+bool stop_ir = false;
+double last_error = 0, total_error = 0;
+unsigned long last_time = 0;
+SharpDistSensor sharpL(pin_sharpL, 1);
+SharpDistSensor sharpR(pin_sharpR, 1);
+SharpDistSensor sharpF(pin_sharpF, 1);
+
 // *Servo variables*
 Servo servoW;
 Servo servoC;
@@ -30,9 +55,13 @@ Servo servoH;
  
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
+const double base_speed = 100;
+double m1_speed = 250;
+double m2_speed = 250;
 
 // *State Variables*
-String state = "Default";
+String state = "";
+bool going_forward = false;
 
 // *Time Variable*
 double t;
@@ -48,10 +77,19 @@ void setup() {
   servoH.write(90);
 
   pinMode(pin_motor_w1, OUTPUT);
-  pinMode(pin_motor_w2, OUTPUT);s
+  pinMode(pin_motor_w2, OUTPUT);
   
   // *Initialize communication*
   Serial2.begin(9600);
+
+  // *Initialize Sensors*
+  qtr1.setTypeRC();
+  qtr2.setTypeRC();
+  qtr1.setSensorPins(pins_qtr1, 8);
+  qtr2.setSensorPins(pins_qtr2, 8);
+  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpF.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
 
   // *Initialize motor driver*
   mshield.init();
@@ -60,53 +98,186 @@ void setup() {
 }
 
 void loop() {
-  if (Serial2.available()){                   // message sent from Uno
-    state = Serial2.readStringUntil('\n');    // read a single character sent from Uno
-    Serial2.read();                           // clear new line character from buffer
-    delay(10);
+  float Kp = 0.9;
+  float Ki = 0.1;
+  float Kd = 0.9;
+  if (Serial2.available()){                       // message sent from Uno
+//    state = Serial2.readStringUntil('\n');        // read a String sent from Uno
+//    state = state.substring(0, state.length()-1); // trim trailing white space
+//    Serial2.read();                               // clear new line character from buffer
+//    delay(10);
+//    Serial2.print("state set to: ");
+//    Serial2.println(state);
+    Kp = Serial2.readStringUntil(' ').toFloat();
+    Ki = Serial2.readStringUntil(' ').toFloat();
+    Kd = Serial2.readStringUntil(' ').toFloat();
   }
-  if (state == "instrument") {
-    test_instrument_motor(pin_motor_w1, pin_motor_w2);
-    //state = "drive";
-  }
-  else if (state == "drive") {
-    test_drive_motors(mshield);
-    //state = "turn";
-  }
-  else if (state == "turn") {
-    test_turn(mshield);
-    //state = "servos";
-  }
-  else if (state == "servos") {
-    test_servos(servoW, servoC, servoH);
-    //state = "instrument";
-  }
+
+  follow_wall(Kp, Ki, Kd);
 }
 
 /****************************
  ** User-Defined Functions **
  ****************************/
 
-void test_instrument_motor(int pin_motor_w1, int pin_motor_w2) {
-  instrument_motor_d1(pin_motor_w1, pin_motor_w2);
+void calibrate_qtrs() {
+  float sums1[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float sums2[] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float error1, error2;
+  int num_reads = 20;
+
+  // record sensor values
+  for (int i = 0; i < num_reads; i++) {
+    error1 = line_error_qtr1();
+    error2 = line_error_qtr2();
+    for (int i = 0; i < 8; i++) {
+      sums1[i] += qtr1_vals[i];
+      sums2[i] += qtr2_vals[i];
+    }
+    delay(100);
+  }
+
+  // compute averages
+  for (int i = 0; i < 8; i++) {
+    qtr1_biases[i] = sums1[i]/num_reads;
+    qtr2_biases[i] = sums2[i]/num_reads;
+  }
+
+  // print biases
+  Serial2.println("qtr1 biases");
+  for (int i = 0; i < 8; i++) {
+    Serial2.print(qtr1_biases[i]);
+    Serial2.print('\t');
+  }
+  Serial2.println();
+  Serial2.println("qtr2 biases");
+  for (int i = 0; i < 8; i++) {
+    Serial2.print(qtr2_biases[i]);
+    Serial2.print('\t');
+  }
+}
+
+void stop_motors() {
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);
+  digitalWrite(pin_motor_w1, LOW);
+  digitalWrite(pin_motor_w2, LOW);
+}
+
+void follow_wall(float Kp, float Ki, float Kd) {
+  int error_p, error_i, error_d, error;
+  unsigned long current_time = millis();  // # of milliseconds since program start
+  int delta_time = current_time - last_time;
+  int optimal_dist = 100;   // 100 mm
+  
+  if (going_forward) {
+    error_p = sharpL.getDist() - optimal_dist;
+    error_i = total_error * delta_time;
+    error_d = (error_p - last_error)/delta_time;
+    error = Kp*error_p + Ki*error_i + Kd*error_d;
+    total_error += error;
+    
+    m1_speed = base_speed + error;
+    m2_speed = base_speed - error;
+  }
+  else {
+    error_p = sharpR.getDist() - optimal_dist;
+    error_i = total_error * delta_time;
+    error_d = (error_p - last_error)/delta_time;
+    error = Kp*error_p + Ki*error_i + Kd*error_d;
+    total_error += error;
+    
+    m1_speed = base_speed - error;
+    m2_speed = base_speed + error;
+  }
+  mshield.setM1Speed(m1_speed);
+  mshield.setM2Speed(m2_speed);
+}
+
+void follow_line() {
+  double Kp = 0;
+  double error;
+  if (going_forward) {
+    error = line_error_qtr1();
+  }
+  else {
+    error = line_error_qtr2();
+  }
+  m1_speed = base_speed + Kp*error;
+  m2_speed = base_speed - Kp*error;
+  mshield.setM1Speed(m1_speed);
+  mshield.setM2Speed(m2_speed);
+}
+
+float line_error_qtr1() {
+  // read the raw sensor values
+  qtr1.read(qtr1_vals);
+  float value_range = 0;    // TODO: max value read from sensor i.e. 6.5
+  float value_center = 0;   // TODO: half of value_range
+
+  float numer = 0;
+  float denom = 0;
+  // print the sensor values as integer numbers from 0 to 2500
+  // 0    = maximum reflectance (white)
+  // 2500 = minimum reflectance (black)
+  for (int i = 0; i < 8; i++) {
+    Serial2.print(qtr1_vals[i]);
+    Serial2.print('\t');
+    numer += (qtr1_vals[i] - qtr1_biases[i]) * i+1;
+    denom += qtr1_vals[i] - qtr1_biases[i];
+  }
+  Serial2.println();
+  float line_local = numer / denom;
+//  Serial2.print("qtr1:\t");
+//  Serial2.print(line_local);
+  float d_from_center = (line_local - value_center) * (value_range / 7.5);
+  float error = d_from_center - 3.5;
+  return error;
+}
+
+float line_error_qtr2() {
+  // read the raw sensor values
+  qtr2.read(qtr2_vals);
+  float value_range = 0;    // TODO: max value read from sensor i.e. 6.5
+  float value_center = 0;   // TODO: half of value_range
+
+  float numer = 0;
+  float denom = 0;
+  for (int i = 0; i < 8; i++) {
+    Serial2.print(qtr2_vals[i]);
+    Serial2.print('\t');    
+    numer += (qtr2_vals[i] - qtr2_biases[i]) * i+1;
+    denom += qtr2_vals[i] - qtr2_biases[i];
+  }
+  Serial2.println();
+  float line_local = numer / denom;
+//  Serial2.print("\tqtr2:\t");
+//  Serial2.println(line_local);
+  float d_from_center = (line_local - value_center) * (value_range / 7.5);
+  float error = d_from_center - 3.5;
+  return error;
+}
+
+void test_instrument_motor() {
+  instrument_motor_d1();
   delay(2000);
-  instrument_motor_d2(pin_motor_w1, pin_motor_w2);
+  instrument_motor_d2();
   delay(2000);
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, LOW);
 }
 
-void instrument_motor_d1(int pin_motor_w1, int pin_motor_w2) {
+void instrument_motor_d1() {
   digitalWrite(pin_motor_w1, HIGH);
   digitalWrite(pin_motor_w2, LOW);
 }
 
-void instrument_motor_d2(int pin_motor_w1, int pin_motor_w2) {
+void instrument_motor_d2() {
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, HIGH);
 }
 
-void test_servos(Servo servoW, Servo servoC, Servo servoH){
+void test_servos(){
   servoW.write(45);
   delay(1000);
   servoW.write(0);
@@ -121,7 +292,7 @@ void test_servos(Servo servoW, Servo servoC, Servo servoH){
   delay(1000);
 }
 
-void test_drive_motors(DualTB9051FTGMotorShieldUnoMega mshield){
+void test_drive_motors(){
   // Turn drive motors in both directions for 1 second
   int motor_power = 250;
   mshield.setM1Speed(motor_power);
@@ -138,7 +309,7 @@ void test_drive_motors(DualTB9051FTGMotorShieldUnoMega mshield){
   delay(1000);
 }
 
-void test_turn(DualTB9051FTGMotorShieldUnoMega mshield) {
+void test_turn() {
   int power = 250;
   
   // Turn 1

@@ -34,6 +34,6 @@ void loop() // run over and over
 {
   if(mySerial.available()>2){
     inString = mySerial.readStringUntil('\n');  // receive string of data from MEGA
-    Serial.println(inString);  // relay string of data back to MATLAB
+    Serial.println(inString);
   }
 }

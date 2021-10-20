@@ -1,7 +1,7 @@
 #include <SoftwareSerial.h>
 SoftwareSerial mySerial(2, 3); // RX, TX
 String message;
-String message_from_mega;
+String from_mega;
 
 void setup()  
 {
@@ -23,5 +23,11 @@ void loop() // run over and over
     Serial.read();  // clear new line from buffer
     delay(10);
     Serial.println("Message Sent");
+  }
+
+  // print any messages sent from Mega
+  if (mySerial.available()) {
+    from_mega = mySerial.readStringUntil('\n');  // receive string of data from MEGA
+    Serial.println(from_mega);
   }
 }
