@@ -25,31 +25,29 @@ const int pin_servo_w = 46;
 const int pin_servo_c = 45;
 const int pin_servo_h = 44;
 
-const uint8_t pins_qtr1[] = {23, 25, 27, 29, 31, 33, 35, 37};
-const uint8_t pins_qtr2[] = {22, 24, 26, 28, 30, 32, 34, 36};
+const uint8_t pins_qtr1[] = {22, 24, 26, 30, 32, 34, 38, 40};
+const uint8_t pins_qtr2[] = {23, 25, 27, 31, 33, 35, 39, 41};
 
 const byte pin_sharpL = A10;
 const byte pin_sharpR = A11;
 const byte pin_sharpF = A12;
 
 const byte pin_color = A5;
-const int pin_red = 41;
-const int pin_green = 42;
-const int pin_blue = 43;
+const int pin_red = 48;
+const int pin_green = 50;
+const int pin_blue = 52;
 
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
-int16_t qtr1_biases[] = {1702, 1413, 1416, 1326, 1461, 1492, 1624, 1750};
-int16_t qtr2_biases[] = {2169, 1811, 1710, 1518, 1560, 1793, 1746, 2215};
+int16_t qtr1_biases[] = {1205, 968, 968, 917, 1014, 1004, 1110, 1251};
+int16_t qtr2_biases[] = {1250, 1076, 1059, 918, 968, 1098, 1011, 1158};
 int16_t qtr1_vals[8];
 int16_t qtr2_vals[8];
-float ys[] = {1702, 1413, 1416, 1326, 1461, 1492, 1624, 1750};
 
 // *Sharp IR Variables*
 bool stop_ir = false;
 double last_error = 0, total_error = 0;
-unsigned long last_time = 0;
 SharpDistSensor sharpL(pin_sharpL, 1);
 SharpDistSensor sharpR(pin_sharpR, 1);
 SharpDistSensor sharpF(pin_sharpF, 1);
@@ -61,7 +59,8 @@ Servo servoH;
  
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
-const double base_speed = 100;
+double base_speed = 100;
+double pid_scaling = base_speed/100;
 double m1_speed = 250;
 double m2_speed = 250;
 
@@ -71,6 +70,7 @@ bool going_forward = true;
 
 // *Time Variable*
 double t;
+unsigned long last_time = 0;
 
 void setup() {
 
@@ -104,12 +104,10 @@ void setup() {
   mshield.enableDrivers();
   mshield.flipM2(true);
   Serial2.println("Mega Ready");
+//  calibrate_qtrs();
 }
 
 void loop() {
-//  float Kp = 0.9;
-//  float Ki = 0.0;
-//  float Kd = 0.9;
   if (Serial2.available()){                       // message sent from Uno
     state = Serial2.readStringUntil('\n');        // read a String sent from Uno
     state = state.substring(0, state.length()-1); // trim trailing white space
@@ -117,13 +115,10 @@ void loop() {
     delay(10);
     Serial2.print("state set to: ");
     Serial2.println(state);
-//    Kp = Serial2.readStringUntil(' ').toFloat();
-//    Ki = Serial2.readStringUntil(' ').toFloat();
-//    Kd = Serial2.readStringUntil(' ').toFloat();
   }
 
   // Color sensor
-  if (state == "color") {
+  if (state == "c") {
     read_color();
     state = "";
   }
@@ -131,12 +126,19 @@ void loop() {
   // Sharp IR
   if (state == "ir") {
    going_forward = true;
-   test_sharpIR();
+   follow_wall(0.9, 0.9);
   }
 
+  float Kp = 40;
+  float Kd = 20;
   // Line Following
-  if (state == "line") {
-    follow_line(20, 0.0, 20);
+  if (state == "linef") {
+    going_forward = true;
+    follow_line(Kp, Kd);
+  }
+  else if (state == "lineb") {
+    going_forward = false;
+    follow_line(Kp, Kd);
   }
 
   // Kill switch
@@ -151,63 +153,57 @@ void loop() {
  ****************************/
 
 void read_color() {
-  int rgb_vals[3] = {0, 0, 0};
+  String color;
+  int num_reads = 30;
+  int red=0, green=0, blue=0;
 
   // collect color readings
-  for (int i = 0; i < 30; i++) {
+  for (int i = 0; i < num_reads; i++) {
 
     // read red
     digitalWrite(pin_red, LOW);
     digitalWrite(pin_green, HIGH);
     digitalWrite(pin_blue, HIGH);
-    delay(1);
-    rgb_vals[0] += analogRead(pin_color);
+    delay(5);
+    red += analogRead(pin_color);
 
     // read green
     digitalWrite(pin_red, HIGH);
     digitalWrite(pin_green, LOW);
     digitalWrite(pin_blue, HIGH);
-    delay(1);
-    rgb_vals[1] += analogRead(pin_color);
+    delay(5);
+    green += analogRead(pin_color);
 
     // read blue
     digitalWrite(pin_red, HIGH);
     digitalWrite(pin_green, HIGH);
     digitalWrite(pin_blue, LOW);
-    delay(1);
-    rgb_vals[2] += analogRead(pin_color);
+    delay(5);
+    blue += analogRead(pin_color);
+
+    // reset
+    digitalWrite(pin_red, LOW);
+    digitalWrite(pin_green, LOW);
+    digitalWrite(pin_blue, LOW);
   }
 
-  // average color readings
-  for (int i = 0; i < 3; i++) {
-    rgb_vals[i] = rgb_vals[i]/30;
-  }
+  // average the readings
+  red = red/num_reads;
+  green = green/num_reads;
+  blue = blue/num_reads;
 
-  Serial2.println("Red\tGreen\tBlue");
-  Serial2.print(rgb_vals[0]);
-  Serial2.print("\t");
-  Serial2.print(rgb_vals[1]);
-  Serial2.print("\t");
-  Serial2.println(rgb_vals[2]);
-}
-
-void filter_qtr() {
-  double alpha = 0.2;
-  for (int i = 0; i < 8; i++) {
-    ys[i] = alpha*qtr1_vals[i] + (1-alpha)*ys[i];
+  // determine color
+  if (red >= green && red >= (blue-10)) {
+    color = "red";
   }
-}
-
-void test_sharpIR() {
-  float Kp = 0.9;
-  float Ki = 0.0;
-  float Kd = 0.9;
-  if (state == "stop") {
-    stop_motors();
+  else if (green >= red && green >= (blue-10)) {
+    color = "green";
   }
-  else {
-    follow_wall(Kp, Ki, Kd);
+  else if (blue >= red && blue >= (green-10)) {
+    color = "blue";
   }
+  Serial2.print("color: ");
+  Serial2.println(color);
 }
 
 void calibrate_qtrs() {
@@ -218,19 +214,20 @@ void calibrate_qtrs() {
 
   // record sensor values
   for (int i = 0; i < num_reads; i++) {
-    error1 = line_error_qtr1();
-    error2 = line_error_qtr2();
+    going_forward = true;
+    error1 = line_error();
+    going_forward = false;
+    error2 = line_error();
     for (int i = 0; i < 8; i++) {
       sums1[i] += qtr1_vals[i];
       sums2[i] += qtr2_vals[i];
     }
-    delay(100);
+    delay(50);
   }
 
   // compute averages
   for (int i = 0; i < 8; i++) {
     qtr1_biases[i] = sums1[i]/num_reads;
-    ys[i] = sums1[i]/num_reads;
     qtr2_biases[i] = sums2[i]/num_reads;
   }
 
@@ -241,11 +238,13 @@ void calibrate_qtrs() {
     Serial2.print('\t');
   }
   Serial2.println();
-//  Serial2.println("qtr2 biases");
-//  for (int i = 0; i < 8; i++) {
-//    Serial2.print(qtr2_biases[i]);
-//    Serial2.print('\t');
-//  }
+  
+  Serial2.println("qtr2 biases");
+  for (int i = 0; i < 8; i++) {
+    Serial2.print(qtr2_biases[i]);
+    Serial2.print('\t');
+  }
+  Serial2.println();
 }
 
 void stop_motors() {
@@ -255,17 +254,16 @@ void stop_motors() {
   digitalWrite(pin_motor_w2, LOW);
 }
 
-void follow_wall(float Kp, float Ki, float Kd) {
-  int error_p, error_i, error_d, error;
+void follow_wall(float Kp, float Kd) {
+  int error_p, error_d, error;
   unsigned long current_time = millis();  // # of milliseconds since program start
   int delta_time = current_time - last_time;
   int optimal_dist = 50;   // 50 mm
   
   if (going_forward) {
     error_p = sharpL.getDist() - optimal_dist;
-    error_i = total_error * delta_time;
     error_d = (error_p - last_error)/delta_time;
-    error = Kp*error_p + Ki*error_i + Kd*error_d;
+    error = Kp*error_p + Kd*error_d;
     total_error += error;
     
     m1_speed = base_speed + error;
@@ -273,9 +271,8 @@ void follow_wall(float Kp, float Ki, float Kd) {
   }
   else {
     error_p = sharpR.getDist() - optimal_dist;
-    error_i = total_error * delta_time;
     error_d = (error_p - last_error)/delta_time;
-    error = Kp*error_p + Ki*error_i + Kd*error_d;
+    error = Kp*error_p + Kd*error_d;
     total_error += error;
     
     m1_speed = -(base_speed - error);
@@ -285,49 +282,72 @@ void follow_wall(float Kp, float Ki, float Kd) {
   delay(10);
   mshield.setM1Speed(m1_speed);
   mshield.setM2Speed(m2_speed);
+  last_time = current_time;
 }
 
-void follow_line(float Kp, float Ki, float Kd) {
-  int error_p, error_i, error_d, error;
+void follow_line(float Kp, float Kd) {
+  double error_p, error_d, error;
   unsigned long current_time = millis();  // # of milliseconds since program start
   int delta_time = current_time - last_time;
+
+  // apply pid error scaling factor
+  Kp *= pid_scaling;
+  Kd *= pid_scaling;
+
+  // read errors
+  error_p = line_error();
+  error_d = (error_p - last_error)/delta_time;
+  error = Kp*error_p + Kd*error_d;
+  total_error += error;
+  Serial2.print("error_p:\t");
+  Serial2.print(error_p);
+  Serial2.print("\terror_i\t");
+  Serial2.print(error_d);
+  Serial2.print("\terror:\t");
+  Serial2.print(error);
+  Serial2.print("\tdt:\t");
+  Serial2.println(delta_time);
+
+  // correct motors by varying speed
   if (going_forward) {
-    error_p = line_error_qtr1();
-    error_i = total_error * delta_time;
-    error_d = (error_p - last_error)/delta_time;
-    error = Kp*error_p + Ki*error_i + Kd*error_d;
-    total_error += error;
-    
     m1_speed = base_speed - error;
     m2_speed = base_speed + error;
   }
   else {
-    error_p = line_error_qtr2();
-    error_i = total_error * delta_time;
-    error_d = (error_p - last_error)/delta_time;
-    error = Kp*error_p + Ki*error_i + Kd*error_d;
-    total_error += error;
-    
-    m1_speed = -(base_speed - error);
-    m2_speed = -(base_speed + error);
+    m1_speed = -(base_speed + error);
+    m2_speed = -(base_speed - error);
   }
-  
   mshield.setM1Speed(m1_speed);
   mshield.setM2Speed(m2_speed);
+  last_time = current_time;
 }
 
-float line_error_qtr1() {
-  qtr1.read(qtr1_vals);
-//  filter_qtr();
-  float value_range = 6.32;
-  float value_center = 3.5;
+float line_error() {
 
+  // read front or rear values
+  float value_center;
+  if (going_forward) {
+    qtr1.read(qtr1_vals);
+    value_center = 4.25;
+  }
+  else {
+    qtr2.read(qtr2_vals);
+    value_center = 4.55;
+  }
+
+  // process qtr readings
   float numer = 0;
   float denom = 0;
   float diff = 0;
   for (int i = 0; i < 8; i++) {
-//    diff = ys[i] - qtr1_biases[i];
-    diff = qtr1_vals[i] - qtr1_biases[i];
+    if (going_forward) {
+      diff = qtr1_vals[i] - qtr1_biases[i];
+    }
+    else {
+      diff = qtr2_vals[i] - qtr2_biases[i];
+    }
+
+    // diff must be positive
     if (diff < 0.01) {
       diff = 0.01;
     }
@@ -336,35 +356,6 @@ float line_error_qtr1() {
   }
   float line_local = numer / denom;
   float error = line_local - value_center;
-  
-  Serial2.print("qtr1:\t");
-  Serial2.print(line_local);
-  Serial2.print("\t error\t");
-  Serial2.println(error);
-  delay(50);
-  return error;
-}
-
-float line_error_qtr2() {
-  // read the raw sensor values
-  qtr2.read(qtr2_vals);
-  float value_range = 0;    // TODO: max value read from sensor i.e. 6.5
-  float value_center = 0;   // TODO: half of value_range
-
-  float numer = 0;
-  float denom = 0;
-  for (int i = 0; i < 8; i++) {
-//    Serial2.print(qtr2_vals[i]);
-//    Serial2.print('\t');    
-    numer += (qtr2_vals[i] - qtr2_biases[i]) * (i+1);
-    denom += qtr2_vals[i] - qtr2_biases[i];
-  }
-//  Serial2.println();
-  float line_local = numer / denom;
-//  Serial2.print("\tqtr2:\t");
-//  Serial2.println(line_local);
-  float d_from_center = (line_local - value_center) * (value_range / 7.5);
-  float error = d_from_center - 3.5;
   return error;
 }
 
