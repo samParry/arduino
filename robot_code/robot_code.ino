@@ -32,6 +32,11 @@ const byte pin_sharpL = A10;
 const byte pin_sharpR = A11;
 const byte pin_sharpF = A12;
 
+const byte pin_color = A5;
+const int pin_red = 41;
+const int pin_green = 42;
+const int pin_blue = 43;
+
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
@@ -78,6 +83,9 @@ void setup() {
   servoH.write(90);
   pinMode(pin_motor_w1, OUTPUT);
   pinMode(pin_motor_w2, OUTPUT);
+  pinMode(pin_red, OUTPUT);
+  pinMode(pin_green, OUTPUT);
+  pinMode(pin_blue, OUTPUT);
   
   // *Initialize communication*
   Serial2.begin(9600);
@@ -114,6 +122,12 @@ void loop() {
 //    Kd = Serial2.readStringUntil(' ').toFloat();
   }
 
+  // Color sensor
+  if (state == "color") {
+    read_color();
+    state = "";
+  }
+
   // Sharp IR
   if (state == "ir") {
    going_forward = true;
@@ -126,7 +140,7 @@ void loop() {
   }
 
   // Kill switch
-  if (state == "stop") {
+  if (state == "s") {
     stop_motors();
     state = "";
   }
@@ -135,6 +149,47 @@ void loop() {
 /****************************
  ** User-Defined Functions **
  ****************************/
+
+void read_color() {
+  int rgb_vals[3] = {0, 0, 0};
+
+  // collect color readings
+  for (int i = 0; i < 30; i++) {
+
+    // read red
+    digitalWrite(pin_red, LOW);
+    digitalWrite(pin_green, HIGH);
+    digitalWrite(pin_blue, HIGH);
+    delay(1);
+    rgb_vals[0] += analogRead(pin_color);
+
+    // read green
+    digitalWrite(pin_red, HIGH);
+    digitalWrite(pin_green, LOW);
+    digitalWrite(pin_blue, HIGH);
+    delay(1);
+    rgb_vals[1] += analogRead(pin_color);
+
+    // read blue
+    digitalWrite(pin_red, HIGH);
+    digitalWrite(pin_green, HIGH);
+    digitalWrite(pin_blue, LOW);
+    delay(1);
+    rgb_vals[2] += analogRead(pin_color);
+  }
+
+  // average color readings
+  for (int i = 0; i < 3; i++) {
+    rgb_vals[i] = rgb_vals[i]/30;
+  }
+
+  Serial2.println("Red\tGreen\tBlue");
+  Serial2.print(rgb_vals[0]);
+  Serial2.print("\t");
+  Serial2.print(rgb_vals[1]);
+  Serial2.print("\t");
+  Serial2.println(rgb_vals[2]);
+}
 
 void filter_qtr() {
   double alpha = 0.2;
