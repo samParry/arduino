@@ -2,6 +2,7 @@
 SoftwareSerial mySerial(2, 3); // RX, TX
 String message;
 String from_mega;
+char color;
 
 const byte pin_color = A0;
 const int pin_red = 8;
@@ -24,9 +25,16 @@ void loop() // run over and over
 {
   if(Serial.available()){
     message = Serial.readStringUntil('\n');
-    mySerial.println(message);
+    // determine if message is a color or state
+    if (message.substring(0,4) == "color") {
+      send_color();
+    }
+    else {
+      mySerial.println(message);
+    }
+    // clear buffer and wait to catch up
     Serial.read();  // clear new line from buffer
-    delay(10);
+    delay(10); 
   }
 
   // print any messages sent from Mega
@@ -40,7 +48,7 @@ void loop() // run over and over
  ** User-Defined Functions **
  ****************************/
 
-void read_color() {
+void send_color() {
   String color;
   int num_reads = 30;
   int red=0, green=0, blue=0;
@@ -90,6 +98,12 @@ void read_color() {
   else if (blue >= red && blue >= (green-10)) {
     color = "blue";
   }
+  
+  // print to uno
   Serial.print("color: ");
   Serial.println(color);
+
+  // print to mega
+  mySerial.print("color: ");
+  mySerial.println(color);
 }
