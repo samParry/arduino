@@ -12,15 +12,15 @@
  ** Global Variables ***
  ***********************/
 // *Declare pins*
-const int pin_motor_w1 = 3;
-const int pin_motor_w2 = 5;
+const int pin_motor_w1 = 5;
+const int pin_motor_w2 = 7;
 
 const int pin_servo_w = 46;
 const int pin_servo_c = 45;
 const int pin_servo_h = 44;
 
-const uint8_t pins_qtr1[] = {22, 24, 26, 30, 32, 34, 38, 40};
-const uint8_t pins_qtr2[] = {23, 25, 27, 31, 33, 35, 39, 41};
+const uint8_t pins_qtr1[] = {22, 24, 26, 28, 30, 32, 34, 36};
+const uint8_t pins_qtr2[] = {23, 25, 27, 29, 31, 33, 35, 37};
 
 const byte pin_sharpL = A10;
 const byte pin_sharpR = A11;
@@ -56,19 +56,19 @@ Servo servoC;
 Servo servoH;
 
 // angle variables define servo range of motion
-int servoW_down_angle = 0;
+int servoW_down_angle = 30;
 int servoW_up_angle = 0;
 int servoC_open_angle = 0;
 int servoC_shut_angle = 0;
 int servoH_down_angle = 0;
 int servoH_up_angle = 0;
- 
+
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
 double base_speed = 100;
 double pid_scaling = base_speed/100;  // linear PID scaling factor
-double m1_speed = 250;
-double m2_speed = 250;
+double m1_speed = 100;
+double m2_speed = 100;
 
 // *State Variables*
 String state = "";
@@ -84,17 +84,18 @@ unsigned long last_time = millis()/1000;
 void setup() {
 
   // *Configure pins*
-  pinMode(pin_motor_w1, OUTPUT);
-  pinMode(pin_motor_w2, OUTPUT);
+  pinMode(pin_motor_w1, OUTPUT); digitalWrite(pin_motor_w1, LOW);
+  pinMode(pin_motor_w2, OUTPUT); digitalWrite(pin_motor_w2, LOW);
   pinMode(pin_red, OUTPUT);
   pinMode(pin_green, OUTPUT);
   pinMode(pin_blue, OUTPUT);
+  pinMode(pin_hall, INPUT);
   
   // *Write beginning servo angles*
   servoW.attach(pin_servo_w);
   servoC.attach(pin_servo_c);
   servoH.attach(pin_servo_h);
-  servoW.write(servoW_up_angle);
+  servoW.write(servoW_down_angle);
   servoC.write(servoC_open_angle);
   servoH.write(servoH_up_angle);
 
@@ -119,15 +120,17 @@ void setup() {
 }
 
 void loop() {
+
   // TODO: test that this new serial comm logic works.
   if (Serial2.available()){                       // message sent from Uno
     uno_message = Serial2.readStringUntil('\n');  // read a String sent from Uno
-    uno_message = uno_message.substring(0, state.length()-1); // trim trailing white space
+    uno_message = uno_message.substring(0, uno_message.length()-1); // trim trailing white space
     Serial2.read();                               // clear new line character from buffer
-    delay(1);
-
-    if (uno_message.length() > 4 && uno_message.substring(0, 4) == "color") {
+    delay(10);
+    if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
       bounty_color = uno_message[7];
+      Serial2.print("Bounty color: ");
+      Serial2.println(bounty_color);
     }
     else {
       state = uno_message;
@@ -136,9 +139,18 @@ void loop() {
     }
   }
 
+  // Wheel servo
+  if (state == "servod") {
+    servoW.write(servoW_down_angle);
+    state = "";
+  }
+  else if (state == "servou") {
+    servoW.write(servoW_up_angle);
+    state = "";
+  }
+
   // PM 8
-  if (state = "pm") {
-    approach_hub();
+  if (state == "pm") {
     turn_hub_from_entrance();
     state = "";
   }
@@ -148,6 +160,7 @@ void loop() {
     read_hall();
     Serial2.print("At magnet: ");
     Serial2.println(at_magnet);
+    state = "";
   }
 
   // Color sensor
@@ -214,7 +227,7 @@ void turn_hub_from_entrance() {
     read_hall();
   }
 
-  // stop when magnet sensed
+  // stop when magnet is detected
   stop_motors();
 
   // drop/rotate wheel arm
@@ -241,82 +254,9 @@ void turn_hub_from_entrance() {
   stop_motors();
 }
 
-//TODO: test
-void approach_hub() {
-  // drive past starting line
-  last_time = millis()/1000;
-  follow_line();
-  delay(1000);
-
-  // drive till the black tape is sensed.
-  bool at_hub = false;
-  while (not at_hub) {
-    follow_line();
-    at_hub = at_black_tape();
-  }
-}
-
 /****************************
  ** User-Defined Functions **
  ****************************/
-
-// TODO: Finish writing with working sensor array (tweek threshold & num_reads)
-bool at_black_tape() {
-  int reds[] = {0, 0, 0};
-  int greens[] = {0, 0, 0};
-  int blues[] = {0, 0, 0};
-  int num_reads = 30;
-  int threshold = 0;
-
-  // collect color readings
-  for (int i = 0; i < num_reads; i++) {
-
-    // read red
-    digitalWrite(pin_red, LOW);
-    digitalWrite(pin_green, HIGH);
-    digitalWrite(pin_blue, HIGH);
-    delay(1);
-    reds[0] += analogRead(pin_colorL);
-    reds[1] += analogRead(pin_color);
-    reds[2] += analogRead(pin_colorR);
-
-    // read green
-    digitalWrite(pin_red, HIGH);
-    digitalWrite(pin_green, LOW);
-    digitalWrite(pin_blue, HIGH);
-    delay(1);
-    greens[0] += analogRead(pin_colorL);
-    greens[1] += analogRead(pin_color);
-    greens[2] += analogRead(pin_colorR);
-
-    // read blue
-    digitalWrite(pin_red, HIGH);
-    digitalWrite(pin_green, HIGH);
-    digitalWrite(pin_blue, LOW);
-    delay(1);
-    blues[0] += analogRead(pin_colorL);
-    blues[1] += analogRead(pin_color);
-    blues[2] += analogRead(pin_colorR);
-
-    // reset
-    digitalWrite(pin_red, HIGH);
-    digitalWrite(pin_green, HIGH);
-    digitalWrite(pin_blue, HIGH);    
-  }
-
-  // average the readings
-  for (int i = 0; i < 3; i++) {
-    reds[i] = reds[i]/num_reads;
-    greens[i] = greens[i]/num_reads;
-    blues[i] = blues[i]/num_reads;
-
-    // determine if the sensors are readings black
-    if (reds[i] < threshold || greens[i] < threshold || blues[i] < threshold) {
-      return false;
-    }
-  }
-  return true;
-}
 
 void calibrate_qtrs() {
   float sums1[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -477,10 +417,10 @@ float line_error() {
   return error;
 }
 
-// TODO: tweak threshold and num_reads
+// TODO: tweak threshold
 char read_color() {
   char color;
-  int num_reads = 30;
+  int num_reads = 10;
   int threshold = 0;
   int red=0, green=0, blue=0;
 
@@ -491,21 +431,21 @@ char read_color() {
     digitalWrite(pin_red, LOW);
     digitalWrite(pin_green, HIGH);
     digitalWrite(pin_blue, HIGH);
-    delay(1);
+    delay(5);
     red += analogRead(pin_color);
 
     // read green
     digitalWrite(pin_red, HIGH);
     digitalWrite(pin_green, LOW);
     digitalWrite(pin_blue, HIGH);
-    delay(1);
+    delay(5);
     green += analogRead(pin_color);
 
     // read blue
     digitalWrite(pin_red, HIGH);
     digitalWrite(pin_green, HIGH);
     digitalWrite(pin_blue, LOW);
-    delay(1);
+    delay(5);
     blue += analogRead(pin_color);
 
     // reset
@@ -517,16 +457,20 @@ char read_color() {
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  blue = blue/num_reads;
+  blue = blue/num_reads - 300;
+
+  Serial2.println(red);
+  Serial2.println(green);
+  Serial2.println(blue);
 
   // determine color
-  if (red >= threshold && red >= green && red >= (blue-10)) {
+  if (red >= threshold && red >= green && red >= blue) {
     color = 'r';
   }
-  else if (green >= threshold && green >= red && green >= (blue-10)) {
+  else if (green >= threshold && green >= red && green >= blue) {
     color = 'g';
   }
-  else if (blue >= threshold && blue >= red && blue >= (green-10)) {
+  else if (blue >= threshold && blue >= red && blue >= green) {
     color = 'b';
   }
   else {
@@ -537,8 +481,9 @@ char read_color() {
 
 // TODO: Test with hall effect sensor
 void read_hall() {
-  int threshold = 1000;
-  float reading = analogRead(pin_hall);
+  int threshold = 545;
+  int reading = analogRead(pin_hall);
+  Serial2.println(reading);
   if (reading >= threshold) {
     at_magnet = true;
   }

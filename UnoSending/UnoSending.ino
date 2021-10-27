@@ -5,12 +5,20 @@ String from_mega;
 char color;
 
 const byte pin_color = A0;
-const int pin_red = 8;
+const int pin_red = 10;
 const int pin_green = 9;
-const int pin_blue = 10;
+const int pin_blue = 8;
 
-void setup()  
-{
+void setup() {
+
+  // *Configure pins*
+  pinMode(pin_red, OUTPUT);
+  pinMode(pin_green, OUTPUT);
+  pinMode(pin_blue, OUTPUT);
+  digitalWrite(pin_red, HIGH);
+  digitalWrite(pin_green, HIGH);
+  digitalWrite(pin_blue, HIGH);
+
   // Open serial communications with computer and wait for port to open:
   Serial.begin(9600);
 
@@ -21,15 +29,16 @@ void setup()
   mySerial.begin(9600);
 }
 
-void loop() // run over and over
-{
+void loop() {
   if(Serial.available()){
     message = Serial.readStringUntil('\n');
+    // mySerial.println(message);
     // determine if message is a color or state
-    if (message.substring(0,4) == "color") {
+    if (message.substring(0,5) == "color") {
       send_color();
     }
     else {
+      Serial.println(message);
       mySerial.println(message);
     }
     // clear buffer and wait to catch up
@@ -50,7 +59,7 @@ void loop() // run over and over
 
 void send_color() {
   String color;
-  int num_reads = 30;
+  int num_reads = 10;
   int red=0, green=0, blue=0;
 
   // collect color readings
@@ -78,24 +87,28 @@ void send_color() {
     blue += analogRead(pin_color);
 
     // reset
-    digitalWrite(pin_red, LOW);
-    digitalWrite(pin_green, LOW);
-    digitalWrite(pin_blue, LOW);
+    digitalWrite(pin_red, HIGH);
+    digitalWrite(pin_green, HIGH);
+    digitalWrite(pin_blue, HIGH);
   }
 
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  blue = blue/num_reads;
+  blue = blue/num_reads - 300;
+
+  Serial.println(red);
+  Serial.println(green);
+  Serial.println(blue);
 
   // determine color
-  if (red >= green && red >= (blue-10)) {
+  if (red >= green && red >= blue) {
     color = "red";
   }
-  else if (green >= red && green >= (blue-10)) {
+  else if (green >= red && green >= blue) {
     color = "green";
   }
-  else if (blue >= red && blue >= (green-10)) {
+  else if (blue >= red && blue >= green) {
     color = "blue";
   }
   
