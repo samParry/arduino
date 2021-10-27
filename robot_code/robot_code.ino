@@ -26,9 +26,7 @@ const byte pin_sharpL = A10;
 const byte pin_sharpR = A11;
 const byte pin_sharpF = A12;
 
-const byte pin_colorL = A4;
 const byte pin_color = A5;
-const byte pin_colorR = A6;
 const int pin_red = 48;
 const int pin_green = 50;
 const int pin_blue = 52;
@@ -56,7 +54,7 @@ Servo servoC;
 Servo servoH;
 
 // angle variables define servo range of motion
-int servoW_down_angle = 30;
+int servoW_down_angle = 25;
 int servoW_up_angle = 0;
 int servoC_open_angle = 0;
 int servoC_shut_angle = 0;
@@ -75,6 +73,7 @@ String state = "";
 bool going_forward = false;
 bool at_magnet = false;
 char bounty_color;
+char opposite_color;
 String uno_message;
 
 // *Time Variable*
@@ -84,29 +83,34 @@ unsigned long last_time = millis()/1000;
 void setup() {
 
   // *Configure pins*
-  pinMode(pin_motor_w1, OUTPUT); digitalWrite(pin_motor_w1, LOW);
-  pinMode(pin_motor_w2, OUTPUT); digitalWrite(pin_motor_w2, LOW);
+  pinMode(pin_motor_w1, OUTPUT); 
+  pinMode(pin_motor_w2, OUTPUT); 
   pinMode(pin_red, OUTPUT);
   pinMode(pin_green, OUTPUT);
   pinMode(pin_blue, OUTPUT);
   pinMode(pin_hall, INPUT);
+
+  color_off();
+  // digitalWrite(pin_motor_w1, LOW);
+  // digitalWrite(pin_motor_w2, LOW);
+
   
   // *Write beginning servo angles*
   servoW.attach(pin_servo_w);
   servoC.attach(pin_servo_c);
   servoH.attach(pin_servo_h);
-  servoW.write(servoW_down_angle);
+  servoW.write(servoW_up_angle);
   servoC.write(servoC_open_angle);
   servoH.write(servoH_up_angle);
 
   // *Initialize sensors*
-  qtr1.setTypeRC();
-  qtr2.setTypeRC();
-  qtr1.setSensorPins(pins_qtr1, 8);
-  qtr2.setSensorPins(pins_qtr2, 8);
-  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  sharpF.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // qtr1.setTypeRC();
+  // qtr2.setTypeRC();
+  // qtr1.setSensorPins(pins_qtr1, 8);
+  // qtr2.setSensorPins(pins_qtr2, 8);
+  // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // sharpF.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
 
   // *Initialize motor driver*
   mshield.init();
@@ -121,7 +125,6 @@ void setup() {
 
 void loop() {
 
-  // TODO: test that this new serial comm logic works.
   if (Serial2.available()){                       // message sent from Uno
     uno_message = Serial2.readStringUntil('\n');  // read a String sent from Uno
     uno_message = uno_message.substring(0, uno_message.length()-1); // trim trailing white space
@@ -129,14 +132,27 @@ void loop() {
     delay(10);
     if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
       bounty_color = uno_message[7];
-      Serial2.print("Bounty color: ");
-      Serial2.println(bounty_color);
+      identify_opposite_color();
+      Serial2.print("Bounty color:\t");
+      Serial2.print(bounty_color);
+      Serial2.print("\tOpposite color:\t");
+      Serial2.println(opposite_color);
     }
     else {
       state = uno_message;
       Serial2.print("state set to: ");
       Serial2.println(state);
     }
+  }
+
+  // Instrument Motor
+  if (state == "ccw") {
+    instrument_motor_ccw();
+    state = "";
+  }
+  else if (state == "cw") {
+    instrument_motor_cw();
+    state == "";
   }
 
   // Wheel servo
@@ -149,25 +165,27 @@ void loop() {
     state = "";
   }
 
-  // PM 8
-  if (state == "pm") {
-    turn_hub_from_entrance();
-    state = "";
-  }
-
   // Hall Effect sensor
   if (state == "hall") {
-    read_hall();
-    Serial2.print("At magnet: ");
-    Serial2.println(at_magnet);
+    t = millis()/1000;
+    while (millis()/1000 - t <= 5) {
+      read_hall();
+      delay(100);
+      Serial2.print("At magnet:\t");
+      Serial2.println(at_magnet);
+    }
     state = "";
   }
 
   // Color sensor
   if (state == "c") {
-    char color = read_color();
-    Serial2.print("Color:\t");
-    Serial2.println(color);
+    t = millis()/1000;
+    while (millis()/1000 - t <= 6) {    
+      char color = read_color();
+      Serial2.print("Color:\t");
+      Serial2.println(color);
+      delay(1000);
+    }
     state = "";
   }
 
@@ -196,61 +214,50 @@ void loop() {
     stop_motors();
     state = "";
   }
+
+  // PM 8
+  if (state == "pm1") {
+    turn_hub_from_entrance();
+    state = "";
+  }
+  else if (state == "pm2") {
+    turn_hub_from_hub();
+    state = "";
+  }
 }
 
 /*********************
  ** State Functions **
  *********************/
 
-// TODO: test
 void turn_hub_from_entrance() {
+
   // drop/rotate wheel arm
   servoW.write(servoW_down_angle);
-  digitalWrite(pin_motor_w1, HIGH);
-  digitalWrite(pin_motor_w2, LOW);
+  instrument_motor_cw();
 
-  // stop/raise arm when magnet sensed
+  // stop/raise arm motor when magnet sensed
   at_magnet = false;
   while (not at_magnet) {
     read_hall();
   }
-  digitalWrite(pin_motor_w1, LOW);
-  digitalWrite(pin_motor_w2, LOW);
-  servoW.write(servoW_up_angle);
-
-  // enter hub
-  going_forward = false;
-  at_magnet = false;
-  last_time = millis()/1000;
-  while (not at_magnet) {
-    follow_line();
-    read_hall();
-  }
-
-  // stop when magnet is detected
   stop_motors();
+  servoW.write(servoW_up_angle);
+}
+
+void turn_hub_from_hub() {
 
   // drop/rotate wheel arm
   servoW.write(servoW_down_angle);
-  digitalWrite(pin_motor_w1, HIGH);
-  digitalWrite(pin_motor_w2, LOW);
-
-  // determine color opposite bounty color
-  char target_color;
-  switch (bounty_color) {
-    case 'r':
-      target_color = 'b';
-    case 'g':
-      target_color = 'k';
-    case 'b':
-      target_color = 'r';
-  }
+  instrument_motor_cw();
 
   // stop rotation when color is found
   char color = 'w';
-  while (color != target_color) {
+  while (color != opposite_color) {
     color = read_color();
+    Serial2.println(color);
   }
+  servoW.write(servoW_up_angle);
   stop_motors();
 }
 
@@ -297,6 +304,12 @@ void calibrate_qtrs() {
     Serial2.print('\t');
   }
   Serial2.println();
+}
+
+void color_off() {
+  digitalWrite(pin_red, HIGH);
+  digitalWrite(pin_green, HIGH);
+  digitalWrite(pin_blue, HIGH);
 }
 
 void follow_line() {
@@ -380,6 +393,19 @@ void follow_wall() {
   last_time = current_time;
 }
 
+void identify_opposite_color() {
+  // determine color opposite bounty color on hub
+  if (bounty_color == 'r') {
+    opposite_color = 'b';
+  }
+  else if (bounty_color == 'g') {
+    opposite_color = 'g';
+  }
+  else if (bounty_color == 'b') {
+    opposite_color = 'r';
+  }
+}
+
 float line_error() {
 
   // read front or rear values
@@ -420,8 +446,9 @@ float line_error() {
 // TODO: tweak threshold
 char read_color() {
   char color;
-  int num_reads = 10;
-  int threshold = 0;
+  int num_reads = 5;
+  int delay_time = 1;
+  int threshold = 900;
   int red=0, green=0, blue=0;
 
   // collect color readings
@@ -431,60 +458,66 @@ char read_color() {
     digitalWrite(pin_red, LOW);
     digitalWrite(pin_green, HIGH);
     digitalWrite(pin_blue, HIGH);
-    delay(5);
+    delay(delay_time);
     red += analogRead(pin_color);
 
     // read green
     digitalWrite(pin_red, HIGH);
     digitalWrite(pin_green, LOW);
     digitalWrite(pin_blue, HIGH);
-    delay(5);
+    delay(delay_time);
     green += analogRead(pin_color);
 
     // read blue
     digitalWrite(pin_red, HIGH);
     digitalWrite(pin_green, HIGH);
     digitalWrite(pin_blue, LOW);
-    delay(5);
+    delay(delay_time);
     blue += analogRead(pin_color);
 
-    // reset
-    digitalWrite(pin_red, HIGH);
-    digitalWrite(pin_green, HIGH);
-    digitalWrite(pin_blue, HIGH);
+    color_off();
   }
 
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  blue = blue/num_reads - 300;
+  // blue = blue/num_reads - 300;
+  blue = blue/num_reads;
 
-  Serial2.println(red);
-  Serial2.println(green);
+  Serial2.print(red);
+  Serial2.print("\t");
+  Serial2.print(green);
+  Serial2.print("\t");
   Serial2.println(blue);
 
   // determine color
-  if (red >= threshold && red >= green && red >= blue) {
-    color = 'r';
-  }
-  else if (green >= threshold && green >= red && green >= blue) {
-    color = 'g';
-  }
-  else if (blue >= threshold && blue >= red && blue >= green) {
-    color = 'b';
+  if (red >= threshold && green >= threshold) {
+    color = 'w';
   }
   else {
-    color = 'w';
+    if (red >= green && red >= blue) {
+      if (red >= 400) {
+        color = 'r';
+      }
+    }
+    else if (green >= red && green >= blue) {
+      if (green >= 300) {
+        color = 'g';
+      }
+    }
+    else if (blue >= red && blue >= green) {
+      if (blue >= 400) {
+        color = 'b';
+      }
+    }
   }
   return color;
 }
 
-// TODO: Test with hall effect sensor
 void read_hall() {
-  int threshold = 545;
+  int threshold = 500;
   int reading = analogRead(pin_hall);
-  Serial2.println(reading);
-  if (reading >= threshold) {
+  if (reading <= threshold) {
     at_magnet = true;
   }
   else {
@@ -504,9 +537,9 @@ void stop_motors() {
  ******************/
 
 void test_instrument_motor() {
-  instrument_motor_d1();
+  instrument_motor_ccw();
   delay(2000);
-  instrument_motor_d2();
+  instrument_motor_cw();
   delay(2000);
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, LOW);
@@ -564,12 +597,12 @@ void test_turn() {
   delay(1000);
 }
  
-void instrument_motor_d1() {
+void instrument_motor_ccw() {
   digitalWrite(pin_motor_w1, HIGH);
   digitalWrite(pin_motor_w2, LOW);
 }
 
-void instrument_motor_d2() {
+void instrument_motor_cw() {
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, HIGH);
 }

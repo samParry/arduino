@@ -5,8 +5,8 @@ String from_mega;
 char color;
 
 const byte pin_color = A0;
-const int pin_red = 10;
-const int pin_green = 9;
+const int pin_red = 12;
+const int pin_green = 10;
 const int pin_blue = 8;
 
 void setup() {
@@ -95,7 +95,7 @@ void send_color() {
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  blue = blue/num_reads - 300;
+  blue = blue/num_reads;
 
   Serial.println(red);
   Serial.println(green);
