@@ -125,11 +125,13 @@ void setup() {
 
 void loop() {
 
-  if (Serial2.available()){                       // message sent from Uno
+  if (Serial2.available()){
     uno_message = Serial2.readStringUntil('\n');  // read a String sent from Uno
     uno_message = uno_message.substring(0, uno_message.length()-1); // trim trailing white space
     Serial2.read();                               // clear new line character from buffer
     delay(10);
+
+    // recieve bounty color from uno
     if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
       bounty_color = uno_message[7];
       identify_opposite_color();
@@ -138,7 +140,7 @@ void loop() {
       Serial2.print("\tOpposite color:\t");
       Serial2.println(opposite_color);
     }
-    else {
+    else {  // recieve state commands from uno
       state = uno_message;
       Serial2.print("state set to: ");
       Serial2.println(state);
@@ -312,6 +314,7 @@ void color_off() {
   digitalWrite(pin_blue, HIGH);
 }
 
+// TODO: recalibrate both sensors independently
 void follow_line() {
   double Kp = 40, Kd = 20;
   double error_p, error_d, error;
@@ -406,6 +409,16 @@ void identify_opposite_color() {
   }
 }
 
+void instrument_motor_ccw() {
+  digitalWrite(pin_motor_w1, HIGH);
+  digitalWrite(pin_motor_w2, LOW);
+}
+
+void instrument_motor_cw() {
+  digitalWrite(pin_motor_w1, LOW);
+  digitalWrite(pin_motor_w2, HIGH);
+}
+
 float line_error() {
 
   // read front or rear values
@@ -439,7 +452,14 @@ float line_error() {
     denom += diff;
   }
   float line_local = numer / denom;
-  float error = line_local - value_center;
+
+  // Rear sensor is flipped
+  if (going_forward) {
+    float error = line_local - value_center;
+  }
+  else {
+    float error = value_center - line_local;
+  }
   return error;
 }
 
@@ -595,14 +615,4 @@ void test_turn() {
   mshield.setM1Speed(0);
   mshield.setM2Speed(0);
   delay(1000);
-}
- 
-void instrument_motor_ccw() {
-  digitalWrite(pin_motor_w1, HIGH);
-  digitalWrite(pin_motor_w2, LOW);
-}
-
-void instrument_motor_cw() {
-  digitalWrite(pin_motor_w1, LOW);
-  digitalWrite(pin_motor_w2, HIGH);
 }
