@@ -7,6 +7,7 @@
 #include <SharpDistSensor.h>;
 #include <QTRSensors.h>;
 #include "DualTB9051FTGMotorShieldUnoMega.h";
+#include "Encoder.h";
 
 /***********************
  ** Global Variables ***
@@ -31,6 +32,11 @@ const int pin_red = 48;
 const int pin_green = 50;
 const int pin_blue = 52;
 const byte pin_hall = A2;
+
+const int pin_encoder_m1a = 18;
+const int pin_encoder_m1b = 19;
+const int pin_encoder_m2a = 20;
+const int pin_encoder_m2b = 21;
 
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
@@ -61,10 +67,17 @@ int servoH_up_angle = 0;
 
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
-double base_speed = 300;
+double base_speed = 100;
 double pid_scaling = base_speed/100.0;  // linear PID scaling factor
 double m1_speed = base_speed;
 double m2_speed = base_speed;
+
+// *Encoder variables*
+Encoder EncoderM1(pin_encoder_m1a , pin_encoder_m1b);
+Encoder EncoderM2(pin_encoder_m2a,  pin_encoder_m2b);
+double theta_traveled_m1_old = 0;
+double theta_traveled_m2_old = 0;
+double radians_traveled = 0;
 
 // *State Variables*
 String state = "";
@@ -76,9 +89,9 @@ String uno_message;
 
 // *Time Variable*
 double t;
-unsigned long last_time;
-unsigned long current_time;
-int delta_time;
+float last_time;
+float current_time;
+float delta_time;
 
 void setup() {
 
@@ -147,25 +160,38 @@ void loop() {
     }
   }
 
-  // Instrument Motor
-  if (state == "ccw") {
-    instrument_motor_ccw();
-    state = "";
+  //Encoder straight line
+  if (state == "line") {
+
+    //Robot Measurements
+    double wheel_radius = 35; //mm
+    double desired_total_distance = 100;
+    double required_radians = desired_total_distance / wheel_radius;
+    
+    if (radians_traveled <= required_radians) {
+      encoder_drive_straight(desired_total_distance);
+    }
+    else if (radians_traveled >= required_radians) {
+      reset_encoder_tracking();
+    }
   }
-  else if (state == "cw") {
-    instrument_motor_cw();
-    state == "";
+  //Encoder circle
+  else if (state == "circle") {
+
+    //Robot Measurements
+    double wheel_radius = 35; //mm
+    double desired_radius = 400;
+    double desired_theta = 2 * PI;
+    double required_radians = (desired_radius * desired_theta) / wheel_radius;
+
+    if (radians_traveled <= required_radians) {
+      encoder_drive_circle(desired_radius, desired_theta);
+    }
+    else if (radians_traveled >= required_radians) {
+      reset_encoder_tracking();
+    }
   }
 
-  // Wheel servo
-  if (state == "servod") {
-    servoW.write(servoW_down_angle);
-    state = "";
-  }
-  else if (state == "servou") {
-    servoW.write(servoW_up_angle);
-    state = "";
-  }
 
   // Hall Effect sensor
   if (state == "hall") {
@@ -302,6 +328,108 @@ void color_off() {
   digitalWrite(pin_red, HIGH);
   digitalWrite(pin_green, HIGH);
   digitalWrite(pin_blue, HIGH);
+}
+
+void encoder_drive_straight(double desired_distance) {
+  //encoder variables
+  double wheel_radius = 35; //mm
+  double GearRatio = 100;
+  double countsPerRev = 64;
+  double RevsShaft2Rad = 2 * PI;
+  double required_radians = desired_distance / wheel_radius;
+  double Kp = 1.5;
+
+  //Apply PID scaling
+  Kp *= pid_scaling;
+  
+  //Time based variables
+  current_time = millis();
+  delta_time = current_time / 1000.0 - last_time;
+
+  //read the encoders
+  double count_m1 = EncoderM1.read();
+  double count_m2 = -EncoderM2.read();
+
+  //solve for radians traveled
+  double theta_traveled_m1 = (count_m1 * RevsShaft2Rad) * (1 / (countsPerRev * GearRatio));
+  double theta_traveled_m2 = (count_m2 *  RevsShaft2Rad) * (1 / (countsPerRev * GearRatio));
+
+  //solve for velocities
+  double velocity_m1 = (theta_traveled_m1 - theta_traveled_m1_old)/delta_time;
+  double velocity_m2 = (theta_traveled_m2 - theta_traveled_m2_old)/delta_time;
+  double velocity_average = (velocity_m1 + velocity_m2)/2;
+
+  //Solve for the next desired radian count
+  double theta_d1 = theta_traveled_m1 + velocity_average * (delta_time);
+  double theta_d2 = theta_traveled_m2 + velocity_average * (delta_time);
+
+  //Solve for voltages
+  m1_speed = base_speed + Kp * (theta_d1 - theta_traveled_m1);
+  m2_speed = base_speed + Kp * (theta_d2 - theta_traveled_m2);
+  
+  //Set Motor voltages
+  mshield.setM1Speed(m1_speed);
+  mshield.setM2Speed(m2_speed);
+  
+  //record global variables
+  radians_traveled = (theta_traveled_m1 + theta_traveled_m2) / 2;
+  theta_traveled_m1_old = theta_traveled_m1;
+  theta_traveled_m2_old = theta_traveled_m2;
+  last_time = current_time / 1000.0;
+}
+
+void encoder_drive_circle(double desired_radius, double desired_theta) {
+  //Robot Measurements
+  double wheel_radius = 35; //mm
+  double distance_between_wheels = 240; //mm
+
+  //encoder variables
+  double GearRatio = 100;
+  double countsPerRev = 64;
+  double RevsShaft2Rad = 2 * PI;
+  double required_radians = RevsShaft2Rad * ((desired_radius * desired_theta)/ (RevsShaft2Rad*wheel_radius));
+
+  //Endoder variables circle
+  double velocity_ratio = (desired_radius + distance_between_wheels)/desired_radius;
+  double Kp = 50;
+  
+  //Apply PID scaling
+  Kp *= pid_scaling;
+  
+  //Time based variables
+  current_time = millis() /1000.0;
+  delta_time = current_time - last_time;
+ 
+  //read the encoders
+  double count_m1 = EncoderM1.read();
+  double count_m2 = -EncoderM2.read();
+
+  //solve for radians traveled
+  double theta_traveled_m1 = (count_m1 * RevsShaft2Rad) * (1 / (countsPerRev * GearRatio));
+  double theta_traveled_m2 = (count_m2 *  RevsShaft2Rad) * (1 / (countsPerRev * GearRatio));
+
+  //solve for current velocities
+  double velocity_m1 = (theta_traveled_m1 - theta_traveled_m1_old)/delta_time;
+  double velocity_m2 = (theta_traveled_m2 - theta_traveled_m2_old)/delta_time;
+  double velocity_average = (velocity_m1 + velocity_m2)/2;
+
+  //Solve for the next desired radian count
+  double theta_d1 = theta_traveled_m1 + velocity_average * delta_time;
+  double theta_d2 = theta_traveled_m2 + velocity_average * delta_time;
+
+  //Solve for voltages
+  m1_speed = (base_speed + Kp * (theta_d1 - theta_traveled_m1));
+  m2_speed = velocity_ratio * (base_speed + Kp * (theta_d2 - theta_traveled_m2));
+
+  //Set voltages to motors
+  mshield.setM1Speed(m1_speed);
+  mshield.setM2Speed(m2_speed);
+
+  //record global variables
+  radians_traveled = (theta_traveled_m1 + theta_traveled_m2) / 2;
+  theta_traveled_m1_old = theta_traveled_m1;
+  theta_traveled_m2_old = theta_traveled_m2;
+  last_time = current_time;
 }
 
 void follow_line() {
@@ -534,6 +662,16 @@ void read_hall() {
   else {
     at_magnet = false;
   }
+}
+
+void reset_encoder_tracking(){
+      stop_motors();
+      radians_traveled = 0;
+      theta_traveled_m1_old = 0;
+      theta_traveled_m2_old = 0;
+      EncoderM1.write(0);
+      EncoderM2.write(0);
+      Serial2.print("Destination Reached");
 }
 
 void stop_motors() {
