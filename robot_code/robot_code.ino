@@ -30,19 +30,17 @@ const byte pin_color = A5;
 const int pin_red = 48;
 const int pin_green = 50;
 const int pin_blue = 52;
-
 const byte pin_hall = A2;
 
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
-int16_t qtr1_biases[] = {1205, 968, 968, 917, 1014, 1004, 1110, 1251};
-int16_t qtr2_biases[] = {1250, 1076, 1059, 918, 968, 1098, 1011, 1158};
+int16_t qtr1_biases[] = {654, 552, 516, 488, 504, 504, 552, 603};
+int16_t qtr2_biases[] = {600, 520, 549, 322, 506, 582, 554, 653};
 int16_t qtr1_vals[8];
 int16_t qtr2_vals[8];
 
 // *Sharp IR Variables*
-bool stop_ir = false;
 double last_error = 0;
 SharpDistSensor sharpL(pin_sharpL, 1);
 SharpDistSensor sharpR(pin_sharpR, 1);
@@ -63,10 +61,10 @@ int servoH_up_angle = 0;
 
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
-double base_speed = 100;
-double pid_scaling = base_speed/100;  // linear PID scaling factor
-double m1_speed = 100;
-double m2_speed = 100;
+double base_speed = 300;
+double pid_scaling = base_speed/100.0;  // linear PID scaling factor
+double m1_speed = base_speed;
+double m2_speed = base_speed;
 
 // *State Variables*
 String state = "";
@@ -78,38 +76,37 @@ String uno_message;
 
 // *Time Variable*
 double t;
-unsigned long last_time = millis()/1000;
+unsigned long last_time;
+unsigned long current_time;
+int delta_time;
 
 void setup() {
 
   // *Configure pins*
-  pinMode(pin_motor_w1, OUTPUT); 
-  pinMode(pin_motor_w2, OUTPUT); 
+  pinMode(pin_motor_w1, OUTPUT);
+  pinMode(pin_motor_w2, OUTPUT);
   pinMode(pin_red, OUTPUT);
   pinMode(pin_green, OUTPUT);
   pinMode(pin_blue, OUTPUT);
   pinMode(pin_hall, INPUT);
 
   color_off();
-  // digitalWrite(pin_motor_w1, LOW);
-  // digitalWrite(pin_motor_w2, LOW);
-
   
   // *Write beginning servo angles*
-  servoW.attach(pin_servo_w);
-  servoC.attach(pin_servo_c);
-  servoH.attach(pin_servo_h);
-  servoW.write(servoW_up_angle);
-  servoC.write(servoC_open_angle);
-  servoH.write(servoH_up_angle);
+  // servoW.attach(pin_servo_w);
+  // servoC.attach(pin_servo_c);
+  // servoH.attach(pin_servo_h);
+  // servoW.write(servoW_up_angle);
+  // servoC.write(servoC_open_angle);
+  // servoH.write(servoH_up_angle);
 
   // *Initialize sensors*
-  // qtr1.setTypeRC();
-  // qtr2.setTypeRC();
-  // qtr1.setSensorPins(pins_qtr1, 8);
-  // qtr2.setSensorPins(pins_qtr2, 8);
-  // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  qtr1.setTypeRC();
+  qtr2.setTypeRC();
+  qtr1.setSensorPins(pins_qtr1, 8);
+  qtr2.setSensorPins(pins_qtr2, 8);
+  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   // sharpF.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
 
   // *Initialize motor driver*
@@ -120,7 +117,10 @@ void setup() {
   // *Initialize communication*
   Serial2.begin(9600);
   Serial2.println("Mega Ready");
-  //calibrate_qtrs();
+
+  // *Final commands*
+  last_time = millis();
+  // calibrate_qtrs();
 }
 
 void loop() {
@@ -211,19 +211,9 @@ void loop() {
     follow_line();
   }
 
-  // Kill switch
+  // Kill motors
   if (state == "s") {
     stop_motors();
-    state = "";
-  }
-
-  // PM 8
-  if (state == "pm1") {
-    turn_hub_from_entrance();
-    state = "";
-  }
-  else if (state == "pm2") {
-    turn_hub_from_hub();
     state = "";
   }
 }
@@ -314,30 +304,26 @@ void color_off() {
   digitalWrite(pin_blue, HIGH);
 }
 
-// TODO: recalibrate both sensors independently
 void follow_line() {
-  double Kp = 40, Kd = 20;
-  double error_p, error_d, error;
-  unsigned long current_time = millis()/1000;  // # of seconds since program start
-  int delta_time = current_time - last_time;
-
-  // apply pid error scaling factor
-  Kp *= pid_scaling;
-  Kd *= pid_scaling;
+  double Kp = 20, Kd = 20;
+  float error_p, error_d, error;
+  current_time = millis();
+  delta_time = current_time - last_time;
 
   // read errors
   error_p = line_error();
   error_d = (error_p - last_error)/delta_time;
   error = Kp*error_p + Kd*error_d;
+  error *= pid_scaling; // apply pid error scaling
 
-  Serial2.print("error_p:\t");
-  Serial2.print(error_p);
-  Serial2.print("\terror_d\t");
-  Serial2.print(error_d);
-  Serial2.print("\terror:\t");
-  Serial2.print(error);
-  Serial2.print("\tdt:\t");
-  Serial2.println(delta_time);
+  // Serial2.print("error_p:\t");
+  // Serial2.print(error_p);
+  // Serial2.print("\terror_d\t");
+  // Serial2.print(error_d);
+  // Serial2.print("\terror:\t");
+  // Serial2.print(error);
+  // Serial2.print("\tdt:\t");
+  // Serial2.println(delta_time);
 
   // correct motors by varying speed
   if (going_forward) {
@@ -353,43 +339,54 @@ void follow_line() {
   last_time = current_time;
 }
 
-// TODO: more calibration
 void follow_wall() {
-  double Kd = 0.9, Kp = 0.9;
-  int error_p, error_d, error;
-  unsigned long current_time = millis()/1000;
-  int delta_time = current_time - last_time;
-  int optimal_dist = 50;   // 50 mm
-  
-  // apply pid error scaling factor
-  Kp *= pid_scaling;
-  Kd *= pid_scaling;
+  double Kp = 1, Kd = 1;
+  float error_p, error_d, error;
+  current_time = millis();
+  delta_time = current_time - last_time;
+  int optimal_dist = 60;   // mm
+  int dist;
+
+  // handles large delta time from first function call
+  if (delta_time >= 100) {
+    delta_time = 52;
+  }
+
+  // The distance readings are all way off for some reason.
+  // negative error (turn right) - too far
+  // positive error (turn left) - too close
+  // turning right (m1 > m2)
+  // turning left (m2 > m1)
 
   if (going_forward) {
-    error_p = sharpL.getDist() - optimal_dist;
+    dist = sharpR.getDist();
+    error_p = dist - optimal_dist;
     error_d = (error_p - last_error)/delta_time;
     error = Kp*error_p + Kd*error_d;
+    error *= pid_scaling;
     
-    m1_speed = base_speed + error;
-    m2_speed = base_speed - error;
+    m1_speed = base_speed - error;
+    m2_speed = base_speed + error;
   }
   else {
-    error_p = sharpR.getDist() - optimal_dist;
+    dist = sharpL.getDist();
+    error_p = dist - optimal_dist;
     error_d = (error_p - last_error)/delta_time;
     error = Kp*error_p + Kd*error_d;
+    error *= pid_scaling;
     
-    m1_speed = -(base_speed - error);
-    m2_speed = -(base_speed + error);
+    m1_speed = -(base_speed + error);
+    m2_speed = -(base_speed - error);
   }
   
-  Serial2.print("error_p:\t");
+  Serial2.print("dist: ");
+  Serial2.print(dist);
+  Serial2.print("\terror_p: ");
   Serial2.print(error_p);
-  Serial2.print("\terror_d\t");
+  Serial2.print("\terror_d ");
   Serial2.print(error_d);
-  Serial2.print("\terror:\t");
-  Serial2.print(error);
-  Serial2.print("\tdt:\t");
-  Serial2.println(delta_time);
+  Serial2.print("\terror: ");
+  Serial2.println(error);
 
   mshield.setM1Speed(m1_speed);
   mshield.setM2Speed(m2_speed);
@@ -401,6 +398,7 @@ void identify_opposite_color() {
   if (bounty_color == 'r') {
     opposite_color = 'b';
   }
+  // No hub rotation happens for the green bounty
   else if (bounty_color == 'g') {
     opposite_color = 'g';
   }
@@ -425,11 +423,11 @@ float line_error() {
   float value_center;
   if (going_forward) {
     qtr1.read(qtr1_vals);
-    value_center = 4.25;
+    value_center = 4.48;
   }
   else {
     qtr2.read(qtr2_vals);
-    value_center = 4.55;
+    value_center = 4.43;
   }
 
   // process qtr readings
@@ -452,18 +450,11 @@ float line_error() {
     denom += diff;
   }
   float line_local = numer / denom;
-
-  // Rear sensor is flipped
-  if (going_forward) {
-    float error = line_local - value_center;
-  }
-  else {
-    float error = value_center - line_local;
-  }
+  float error = value_center - line_local;
   return error;
 }
 
-// TODO: tweak threshold
+// TODO: redo with new sensor
 char read_color() {
   char color;
   int num_reads = 5;
@@ -501,7 +492,6 @@ char read_color() {
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  // blue = blue/num_reads - 300;
   blue = blue/num_reads;
 
   Serial2.print(red);
@@ -534,6 +524,7 @@ char read_color() {
   return color;
 }
 
+// TODO: redo threshold when remounted
 void read_hall() {
   int threshold = 500;
   int reading = analogRead(pin_hall);
@@ -552,9 +543,9 @@ void stop_motors() {
   digitalWrite(pin_motor_w2, LOW);
 }
 
-/******************
- ** Delete These **
- ******************/
+/************************
+ ** Delete These Later **
+ ************************/
 
 void test_instrument_motor() {
   instrument_motor_ccw();
