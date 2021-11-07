@@ -102,9 +102,8 @@ void setup() {
   pinMode(pin_green, OUTPUT);
   pinMode(pin_blue, OUTPUT);
   pinMode(pin_hall, INPUT);
-
   color_off();
-  
+
   // *Write beginning servo angles*
   // servoW.attach(pin_servo_w);
   // servoC.attach(pin_servo_c);
@@ -138,30 +137,10 @@ void setup() {
 
 void loop() {
 
-  if (Serial2.available()){
-    uno_message = Serial2.readStringUntil('\n');  // read a String sent from Uno
-    uno_message = uno_message.substring(0, uno_message.length()-1); // trim trailing white space
-    Serial2.read();                               // clear new line character from buffer
-    delay(10);
-
-    // recieve bounty color from uno
-    if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
-      bounty_color = uno_message[7];
-      identify_opposite_color();
-      Serial2.print("Bounty color:\t");
-      Serial2.print(bounty_color);
-      Serial2.print("\tOpposite color:\t");
-      Serial2.println(opposite_color);
-    }
-    else {  // recieve state commands from uno
-      state = uno_message;
-      Serial2.print("state set to: ");
-      Serial2.println(state);
-    }
-  }
+  read_uno();
 
   //Encoder straight line
-  if (state == "line") {
+  if (state == "sline") {
 
     //Robot Measurements
     double wheel_radius = 35; //mm
@@ -192,9 +171,8 @@ void loop() {
     }
   }
 
-
   // Hall Effect sensor
-  if (state == "hall") {
+  else if (state == "hall") {
     t = millis()/1000;
     while (millis()/1000 - t <= 5) {
       read_hall();
@@ -206,7 +184,7 @@ void loop() {
   }
 
   // Color sensor
-  if (state == "c") {
+  else if (state == "c") {
     t = millis()/1000;
     while (millis()/1000 - t <= 6) {    
       char color = read_color();
@@ -218,7 +196,7 @@ void loop() {
   }
 
   // Sharp IR
-  if (state == "irf") {
+  else if (state == "irf") {
     going_forward = true;
     follow_wall();
   }
@@ -228,7 +206,7 @@ void loop() {
   }
 
   // Line Following
-  if (state == "linef") {
+  else if (state == "linef") {
     going_forward = true;
     follow_line();
   }
@@ -238,7 +216,7 @@ void loop() {
   }
 
   // Kill motors
-  if (state == "s") {
+  else if (state == "s") {
     stop_motors();
     state = "";
   }
@@ -328,6 +306,35 @@ void color_off() {
   digitalWrite(pin_red, HIGH);
   digitalWrite(pin_green, HIGH);
   digitalWrite(pin_blue, HIGH);
+}
+
+char determine_color(int r, int g, int b) {
+  // Serial2.print(r);
+  // Serial2.print("\t");
+  // Serial2.print(g);
+  // Serial2.print("\t");
+  // Serial2.println(b);
+
+  // determine color
+  char color;
+  int w_threshold = 900;
+  int k_threshold = 200;
+  if (r >= w_threshold && g >= w_threshold && b >= w_threshold) {
+    color = 'w';
+  }
+  else if (r <= k_threshold && g <= k_threshold && b <= k_threshold) {
+    color = 'k';
+  }
+  else if (r >= g && r >= b) {
+    color = 'r';
+  }
+  else if (g >= r && g >= b) {
+    color = 'g';
+  }
+  else if (b >= r && b >= g) {
+    color = 'b';
+  }
+  return color;
 }
 
 void encoder_drive_straight(double desired_distance) {
@@ -582,12 +589,9 @@ float line_error() {
   return error;
 }
 
-// TODO: redo with new sensor
 char read_color() {
-  char color;
   int num_reads = 5;
   int delay_time = 1;
-  int threshold = 900;
   int red=0, green=0, blue=0;
 
   // collect color readings
@@ -622,34 +626,31 @@ char read_color() {
   green = green/num_reads;
   blue = blue/num_reads;
 
-  Serial2.print(red);
-  Serial2.print("\t");
-  Serial2.print(green);
-  Serial2.print("\t");
-  Serial2.println(blue);
+  return determine_color(red, green, blue);
+}
 
-  // determine color
-  if (red >= threshold && green >= threshold) {
-    color = 'w';
+void read_uno() {
+  if (Serial2.available()){
+    uno_message = Serial2.readStringUntil('\n');  // read a String sent from Uno
+    uno_message = uno_message.substring(0, uno_message.length()-1); // trim trailing white space
+    Serial2.read();                               // clear new line character from buffer
+    delay(5);
+
+    // recieve bounty color from uno
+    if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
+      bounty_color = uno_message[7];
+      identify_opposite_color();
+      Serial2.print("Bounty color:\t");
+      Serial2.print(bounty_color);
+      Serial2.print("\tOpposite color:\t");
+      Serial2.println(opposite_color);
+    }
+    else {  // recieve state commands from uno
+      state = uno_message;
+      Serial2.print("state set to: ");
+      Serial2.println(state);
+    }
   }
-  else {
-    if (red >= green && red >= blue) {
-      if (red >= 400) {
-        color = 'r';
-      }
-    }
-    else if (green >= red && green >= blue) {
-      if (green >= 300) {
-        color = 'g';
-      }
-    }
-    else if (blue >= red && blue >= green) {
-      if (blue >= 400) {
-        color = 'b';
-      }
-    }
-  }
-  return color;
 }
 
 // TODO: redo threshold when remounted
