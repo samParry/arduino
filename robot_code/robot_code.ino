@@ -3,6 +3,7 @@
 /****************************
  ** #defines and #includes **
  ****************************/
+
 #include <Servo.h>;
 #include <SharpDistSensor.h>;
 #include <QTRSensors.h>;
@@ -58,12 +59,12 @@ Servo servoC;
 Servo servoH;
 
 // angle variables define servo range of motion
-int servoW_down_angle = 25;
+int servoW_down_angle = 0;
 int servoW_up_angle = 0;
 int servoC_open_angle = 0;
 int servoC_shut_angle = 0;
-int servoH_down_angle = 0;
-int servoH_up_angle = 0;
+int servoH_down_angle = 180;
+int servoH_up_angle = 120;
 
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
@@ -110,15 +111,15 @@ void setup() {
   // servoH.attach(pin_servo_h);
   // servoW.write(servoW_up_angle);
   // servoC.write(servoC_open_angle);
-  // servoH.write(servoH_up_angle);
+  // servoH.write(servoH_down_angle);
 
   // *Initialize sensors*
-  qtr1.setTypeRC();
-  qtr2.setTypeRC();
-  qtr1.setSensorPins(pins_qtr1, 8);
-  qtr2.setSensorPins(pins_qtr2, 8);
-  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // qtr1.setTypeRC();
+  // qtr2.setTypeRC();
+  // qtr1.setSensorPins(pins_qtr1, 8);
+  // qtr2.setSensorPins(pins_qtr2, 8);
+  // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   // sharpF.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
 
   // *Initialize motor driver*
@@ -139,8 +140,18 @@ void loop() {
 
   read_uno();
 
+  // Hook arm
+  if (state == "hookd") {
+    servoH.write(servoH_down_angle);
+    state = "";
+  }
+  else if (state == "hooku") {
+    servoH.write(servoW_up_angle);
+    state = "";
+  }
+
   //Encoder straight line
-  if (state == "sline") {
+  else if (state == "sline") {
 
     //Robot Measurements
     double wheel_radius = 35; //mm
@@ -645,7 +656,7 @@ void read_uno() {
       Serial2.print("\tOpposite color:\t");
       Serial2.println(opposite_color);
     }
-    else {  // recieve state commands from uno
+    else {  // receive state commands from uno
       state = uno_message;
       Serial2.print("state set to: ");
       Serial2.println(state);
