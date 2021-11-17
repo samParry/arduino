@@ -1,9 +1,11 @@
+
 #include <SoftwareSerial.h>
+
 SoftwareSerial mySerial(2, 3); // RX, TX
 String message;
 String from_mega;
-char color;
 
+char color;
 const byte pin_color = A0;
 const int pin_red = 12;
 const int pin_green = 10;
@@ -17,20 +19,15 @@ void setup() {
   pinMode(pin_blue, OUTPUT);
   color_off();
 
-  // Open serial communications with computer and wait for port to open:
   Serial.begin(9600);
-
-  // Print a message to the computer through the USB
   Serial.println("Hello Computer!");
-
-  // Open serial communications with the other Arduino board
   mySerial.begin(9600);
 }
 
 void loop() {
   if(Serial.available()){
     message = Serial.readStringUntil('\n');
-    // mySerial.println(message);
+
     // determine if message is a color or state
     if (message.substring(0,5) == "color") {
       send_color();
@@ -46,7 +43,7 @@ void loop() {
 
   // print any messages sent from Mega
   if (mySerial.available()) {
-    from_mega = mySerial.readStringUntil('\n');  // receive string of data from MEGA
+    from_mega = mySerial.readStringUntil('\n');
     Serial.println(from_mega);
   }
 }

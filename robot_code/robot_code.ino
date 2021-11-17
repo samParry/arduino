@@ -59,8 +59,8 @@ Servo servoC;
 Servo servoH;
 
 // angle variables define servo range of motion
-int servoW_down_angle = 0;
-int servoW_up_angle = 0;
+int servoW_down_angle = 130;
+int servoW_up_angle = 135;
 int servoC_open_angle = 0;
 int servoC_shut_angle = 0;
 int servoH_down_angle = 180;
@@ -89,7 +89,7 @@ char opposite_color;
 String uno_message;
 
 // *Time Variable*
-double t;
+float t;
 float last_time;
 float current_time;
 float delta_time;
@@ -120,7 +120,7 @@ void setup() {
   // qtr2.setSensorPins(pins_qtr2, 8);
   // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  // sharpF.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
 
   // *Initialize motor driver*
   mshield.init();
@@ -130,6 +130,8 @@ void setup() {
   // *Initialize communication*
   Serial2.begin(9600);
   Serial2.println("Mega Ready");
+  Serial.begin(9600);
+  Serial.println("Mega Ready");
 
   // *Final commands*
   last_time = millis();
@@ -139,6 +141,7 @@ void setup() {
 void loop() {
 
   read_uno();
+  read_mega();
 
   // Hook arm
   if (state == "hookd") {
@@ -206,14 +209,20 @@ void loop() {
     state = "";
   }
 
-  // Sharp IR
-  else if (state == "irf") {
+  // Sharp IR Following
+  else if (state == "irfor") {
     going_forward = true;
     follow_wall();
   }
-  else if (state == "irb") {
+  else if (state == "irback") {
     going_forward = false;
     follow_wall();
+  }
+  // NO EXIT CONDITION
+  else if (state == "irf") {
+    if (sense_gate()) {
+      state = "";
+    }
   }
 
   // Line Following
@@ -525,14 +534,14 @@ void follow_wall() {
     m2_speed = -(base_speed - error);
   }
   
-  Serial2.print("dist: ");
-  Serial2.print(dist);
-  Serial2.print("\terror_p: ");
-  Serial2.print(error_p);
-  Serial2.print("\terror_d ");
-  Serial2.print(error_d);
-  Serial2.print("\terror: ");
-  Serial2.println(error);
+  // Serial2.print("dist: ");
+  // Serial2.print(dist);
+  // Serial2.print("\terror_p: ");
+  // Serial2.print(error_p);
+  // Serial2.print("\terror_d ");
+  // Serial2.print(error_d);
+  // Serial2.print("\terror: ");
+  // Serial2.println(error);
 
   mshield.setM1Speed(m1_speed);
   mshield.setM2Speed(m2_speed);
@@ -664,6 +673,29 @@ void read_uno() {
   }
 }
 
+void read_mega() {
+  if (Serial.available()){
+    uno_message = Serial.readStringUntil('\n');
+    Serial.read();
+    delay(1);
+
+    // recieve bounty color from uno
+    if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
+      bounty_color = uno_message[7];
+      identify_opposite_color();
+      Serial.print("Bounty color:\t");
+      Serial.print(bounty_color);
+      Serial.print("\tOpposite color:\t");
+      Serial.println(opposite_color);
+    }
+    else {  // receive state commands from uno
+      state = uno_message;
+      Serial.print("state set to: ");
+      Serial.println(state);
+    }
+  }
+}
+
 // TODO: redo threshold when remounted
 void read_hall() {
   int threshold = 500;
@@ -676,7 +708,7 @@ void read_hall() {
   }
 }
 
-void reset_encoder_tracking(){
+void reset_encoder_tracking() {
       stop_motors();
       radians_traveled = 0;
       theta_traveled_m1_old = 0;
@@ -684,6 +716,15 @@ void reset_encoder_tracking(){
       EncoderM1.write(0);
       EncoderM2.write(0);
       Serial2.print("Destination Reached");
+}
+
+bool sense_gate() {
+  int stop_dist = 255; // mm
+  int dist = sharpF.getDist();
+  if (dist <= stop_dist) {
+    return true;
+  }
+  return false;
 }
 
 void stop_motors() {
