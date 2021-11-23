@@ -38,7 +38,7 @@ void loop() {
     }
     // clear buffer and wait to catch up
     Serial.read();  // clear new line from buffer
-    delay(5); 
+    delay(1); 
   }
 
   // print any messages sent from Mega

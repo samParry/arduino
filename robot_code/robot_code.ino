@@ -10,6 +10,15 @@
 #include "DualTB9051FTGMotorShieldUnoMega.h";
 #include "Encoder.h";
 
+#define DEBUG 1
+#if DEBUG == 1
+#define debug(x) Serial2.print(x)
+#define debugln(x) Serial2.println(x)
+#else
+#define debug(x)
+#define debugln(x)
+#endif
+
 /***********************
  ** Global Variables ***
  ***********************/
@@ -114,12 +123,12 @@ void setup() {
   // servoH.write(servoH_down_angle);
 
   // *Initialize sensors*
-  // qtr1.setTypeRC();
-  // qtr2.setTypeRC();
-  // qtr1.setSensorPins(pins_qtr1, 8);
-  // qtr2.setSensorPins(pins_qtr2, 8);
-  // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  qtr1.setTypeRC();
+  qtr2.setTypeRC();
+  qtr1.setSensorPins(pins_qtr1, 8);
+  qtr2.setSensorPins(pins_qtr2, 8);
+  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
 
   // *Initialize motor driver*
@@ -130,12 +139,12 @@ void setup() {
   // *Initialize communication*
   Serial2.begin(9600);
   Serial2.println("Mega Ready");
-  Serial.begin(9600);
-  Serial.println("Mega Ready");
+  // Serial.begin(9600);
+  // Serial.println("Mega Ready");
 
   // *Final commands*
   last_time = millis();
-  // calibrate_qtrs();
+  calibrate_qtrs();
 }
 
 void loop() {
@@ -188,9 +197,9 @@ void loop() {
   // Hall Effect sensor
   else if (state == "hall") {
     t = millis()/1000;
-    while (millis()/1000 - t <= 5) {
+    while (millis()/1000 - t <= 20) {
       read_hall();
-      delay(100);
+      delay(250);
       Serial2.print("At magnet:\t");
       Serial2.println(at_magnet);
     }
@@ -200,11 +209,11 @@ void loop() {
   // Color sensor
   else if (state == "c") {
     t = millis()/1000;
-    while (millis()/1000 - t <= 6) {    
+    while (millis()/1000 - t <= 20) {    
       char color = read_color();
+      delay(250);
       Serial2.print("Color:\t");
       Serial2.println(color);
-      delay(1000);
     }
     state = "";
   }
@@ -297,7 +306,7 @@ void calibrate_qtrs() {
       sums1[i] += qtr1_vals[i];
       sums2[i] += qtr2_vals[i];
     }
-    delay(10);
+    delay(5);
   }
 
   // compute averages
@@ -307,19 +316,19 @@ void calibrate_qtrs() {
   }
 
   // print biases
-  Serial2.println("qtr1 biases");
+  debugln("qtr1 biases");
   for (int i = 0; i < 8; i++) {
     Serial2.print(qtr1_biases[i]);
     Serial2.print('\t');
   }
-  Serial2.println();
+  debugln();
   
-  Serial2.println("qtr2 biases");
+  debugln("qtr2 biases");
   for (int i = 0; i < 8; i++) {
     Serial2.print(qtr2_biases[i]);
     Serial2.print('\t');
   }
-  Serial2.println();
+  debugln();
 }
 
 void color_off() {
@@ -328,17 +337,18 @@ void color_off() {
   digitalWrite(pin_blue, HIGH);
 }
 
+// TODO: Figure out proper thresholds in practice
 char determine_color(int r, int g, int b) {
-  // Serial2.print(r);
-  // Serial2.print("\t");
-  // Serial2.print(g);
-  // Serial2.print("\t");
-  // Serial2.println(b);
+  debug(r);
+  debug("\t");
+  debug(g);
+  debug("\t");
+  debugln(b);
 
   // determine color
   char color;
-  int w_threshold = 900;
-  int k_threshold = 200;
+  int w_threshold = 800;
+  int k_threshold = 250;
   if (r >= w_threshold && g >= w_threshold && b >= w_threshold) {
     color = 'w';
   }
@@ -471,14 +481,14 @@ void follow_line() {
   error = Kp*error_p + Kd*error_d;
   error *= pid_scaling; // apply pid error scaling
 
-  // Serial2.print("error_p:\t");
-  // Serial2.print(error_p);
-  // Serial2.print("\terror_d\t");
-  // Serial2.print(error_d);
-  // Serial2.print("\terror:\t");
-  // Serial2.print(error);
-  // Serial2.print("\tdt:\t");
-  // Serial2.println(delta_time);
+  debug("error_p:\t");
+  debug(error_p);
+  debug("\terror_d\t");
+  debug(error_d);
+  debug("\terror:\t");
+  debug(error);
+  debug("\tdt:\t");
+  debugln(delta_time);
 
   // correct motors by varying speed
   if (going_forward) {
@@ -534,14 +544,14 @@ void follow_wall() {
     m2_speed = -(base_speed - error);
   }
   
-  // Serial2.print("dist: ");
-  // Serial2.print(dist);
-  // Serial2.print("\terror_p: ");
-  // Serial2.print(error_p);
-  // Serial2.print("\terror_d ");
-  // Serial2.print(error_d);
-  // Serial2.print("\terror: ");
-  // Serial2.println(error);
+  debug("dist: ");
+  debug(dist);
+  debug("\terror_p: ");
+  debug(error_p);
+  debug("\terror_d ");
+  debug(error_d);
+  debug("\terror: ");
+  debugln(error);
 
   mshield.setM1Speed(m1_speed);
   mshield.setM2Speed(m2_speed);
@@ -654,7 +664,7 @@ void read_uno() {
     uno_message = Serial2.readStringUntil('\n');  // read a String sent from Uno
     uno_message = uno_message.substring(0, uno_message.length()-1); // trim trailing white space
     Serial2.read();                               // clear new line character from buffer
-    delay(5);
+    delay(1);
 
     // recieve bounty color from uno
     if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
@@ -696,11 +706,12 @@ void read_mega() {
   }
 }
 
-// TODO: redo threshold when remounted
+// TODO: Hall effect sensor sucks ass now
 void read_hall() {
-  int threshold = 500;
+  int threshold = 625;
   int reading = analogRead(pin_hall);
-  if (reading <= threshold) {
+  debugln(reading);
+  if (reading >= threshold) {
     at_magnet = true;
   }
   else {
@@ -718,9 +729,13 @@ void reset_encoder_tracking() {
       Serial2.print("Destination Reached");
 }
 
+// TODO: Redo measurements
 bool sense_gate() {
   int stop_dist = 255; // mm
   int dist = sharpF.getDist();
+  debug('Distance: ');
+  debug(dist);
+  debugln(' mm');
   if (dist <= stop_dist) {
     return true;
   }
