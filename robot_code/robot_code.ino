@@ -4,20 +4,24 @@
  ** #defines and #includes **
  ****************************/
 
-#include <Servo.h>;
-#include <SharpDistSensor.h>;
-#include <QTRSensors.h>;
-#include "DualTB9051FTGMotorShieldUnoMega.h";
-#include "Encoder.h";
-
 #define DEBUG 1
+
 #if DEBUG == 1
+#define debug(x) Serial.print(x)
+#define debugln(x) Serial.println(x)
+#elif DEBUG == 2
 #define debug(x) Serial2.print(x)
 #define debugln(x) Serial2.println(x)
 #else
 #define debug(x)
 #define debugln(x)
 #endif
+
+#include <Servo.h>;
+#include <SharpDistSensor.h>;
+#include <QTRSensors.h>;
+#include "DualTB9051FTGMotorShieldUnoMega.h";
+#include "Encoder.h";
 
 /***********************
  ** Global Variables ***
@@ -42,6 +46,9 @@ const int pin_red = 48;
 const int pin_green = 50;
 const int pin_blue = 52;
 const byte pin_hall = A2;
+
+const byte pin_freq_filt = A6;
+const byte pin_freq_unfilt = A7;
 
 const int pin_encoder_m1a = 18;
 const int pin_encoder_m1b = 19;
@@ -91,6 +98,7 @@ double radians_traveled = 0;
 
 // *State Variables*
 String state = "";
+bool test_state = true;
 bool going_forward = false;
 bool at_magnet = false;
 char bounty_color;
@@ -112,13 +120,15 @@ void setup() {
   pinMode(pin_green, OUTPUT);
   pinMode(pin_blue, OUTPUT);
   pinMode(pin_hall, INPUT);
+  pinMode(pin_freq_unfilt, INPUT);
+  pinMode(pin_freq_filt, INPUT);
   color_off();
 
   // *Write beginning servo angles*
-  // servoW.attach(pin_servo_w);
+  servoW.attach(pin_servo_w);
   // servoC.attach(pin_servo_c);
   // servoH.attach(pin_servo_h);
-  // servoW.write(servoW_up_angle);
+  servoW.write(servoW_up_angle);
   // servoC.write(servoC_open_angle);
   // servoH.write(servoH_down_angle);
 
@@ -137,14 +147,13 @@ void setup() {
   mshield.flipM2(true);
 
   // *Initialize communication*
+  Serial.begin(9600);
   Serial2.begin(9600);
-  Serial2.println("Mega Ready");
-  // Serial.begin(9600);
-  // Serial.println("Mega Ready");
+  debugln("Mega Ready");
 
   // *Final commands*
+  // calibrate_qtrs();
   last_time = millis();
-  calibrate_qtrs();
 }
 
 void loop() {
@@ -152,102 +161,170 @@ void loop() {
   read_uno();
   read_mega();
 
-  // Hook arm
-  if (state == "hookd") {
-    servoH.write(servoH_down_angle);
-    state = "";
+  if (test_state) {
+    test_mode();
   }
-  else if (state == "hooku") {
-    servoH.write(servoW_up_angle);
-    state = "";
-  }
+}
 
-  //Encoder straight line
-  else if (state == "sline") {
+/***********************
+ ** Testing Functions **
+ **********************/
 
-    //Robot Measurements
-    double wheel_radius = 35; //mm
-    double desired_total_distance = 100;
-    double required_radians = desired_total_distance / wheel_radius;
-    
-    if (radians_traveled <= required_radians) {
-      encoder_drive_straight(desired_total_distance);
-    }
-    else if (radians_traveled >= required_radians) {
-      reset_encoder_tracking();
-    }
-  }
-  //Encoder circle
-  else if (state == "circle") {
+void test_mode() {
+  // print test option
+  debugln("\n           Test Mode");
+  debugln("------------------------------------------");
+  debugln("Command    Description    m=menu");
+  debugln("------------------------------------------");
+  debugln("c          Color Sensor");
+  debugln("ec         Drive circle (encoder)");
+  debugln("el         Straight line (encoder)");
+  debugln("f          Compare Frequencies");
+  debugln("h          Hall Effect Sensor");
+  debugln("hd         Hook arm down");
+  debugln("hu         Hook arm up");
+  debugln("hw         Turn Hub Wheel");
+  debugln("irf        Rangefinder (front-facing)");
+  debugln("irl        Rangefinder (left-facing)");
+  debugln("irr        Rangefinder (right-facing)");
+  debugln("lb         Line following (backward)");
+  debugln("lf         Line following (forward)");
+  debugln("qtr        Calibrate QTR Sensors");
+  debugln("wb         Follow wall (backward)");
+  debugln("wf         Follow wall (forward)");
 
-    //Robot Measurements
-    double wheel_radius = 35; //mm
-    double desired_radius = 400;
-    double desired_theta = 2 * PI;
-    double required_radians = (desired_radius * desired_theta) / wheel_radius;
+  while (test_state) {
+    // Read comms at top of loop
+    read_uno();
+    read_mega();
 
-    if (radians_traveled <= required_radians) {
-      encoder_drive_circle(desired_radius, desired_theta);
-    }
-    else if (radians_traveled >= required_radians) {
-      reset_encoder_tracking();
-    }
-  }
-
-  // Hall Effect sensor
-  else if (state == "hall") {
-    t = millis()/1000;
-    while (millis()/1000 - t <= 20) {
-      read_hall();
-      delay(250);
-      Serial2.print("At magnet:\t");
-      Serial2.println(at_magnet);
-    }
-    state = "";
-  }
-
-  // Color sensor
-  else if (state == "c") {
-    t = millis()/1000;
-    while (millis()/1000 - t <= 20) {    
+    // Color sensor
+    if (state == "c") {
       char color = read_color();
-      delay(250);
-      Serial2.print("Color:\t");
-      Serial2.println(color);
+      delay(1000);
     }
-    state = "";
-  }
 
-  // Sharp IR Following
-  else if (state == "irfor") {
-    going_forward = true;
-    follow_wall();
-  }
-  else if (state == "irback") {
-    going_forward = false;
-    follow_wall();
-  }
-  // NO EXIT CONDITION
-  else if (state == "irf") {
-    if (sense_gate()) {
+    // Encoders
+    else if (state == "ec") {
+
+      //Robot Measurements
+      double wheel_radius = 35; //mm
+      double desired_radius = 400;
+      double desired_theta = 2 * PI;
+      double required_radians = (desired_radius * desired_theta) / wheel_radius;
+
+      if (radians_traveled <= required_radians) {
+        encoder_drive_circle(desired_radius, desired_theta);
+      }
+      else if (radians_traveled >= required_radians) {
+        reset_encoder_tracking();
+      }
+    }
+    else if (state == "el") {
+
+      //Robot Measurements
+      double wheel_radius = 35; //mm
+      double desired_total_distance = 100;
+      double required_radians = desired_total_distance / wheel_radius;
+      
+      if (radians_traveled <= required_radians) {
+        encoder_drive_straight(desired_total_distance);
+      }
+      else if (radians_traveled >= required_radians) {
+        reset_encoder_tracking();
+      }
+    }
+
+    // Compare frequencies
+    else if (state == "f") {
+      compare_frequency();
+      delay(500);
+    }
+
+    // Hall Effect sensor
+    else if (state == "h") {
+      read_hall();
+    }
+
+    // Hook arm
+    else if (state == "hd") {
+      servoH.write(servoH_down_angle);
       state = "";
     }
-  }
+    else if (state == "hu") {
+      servoH.write(servoW_up_angle);
+      state = "";
+    }
 
-  // Line Following
-  else if (state == "linef") {
-    going_forward = true;
-    follow_line();
-  }
-  else if (state == "lineb") {
-    going_forward = false;
-    follow_line();
-  }
+    // Turn hub wheel
+    else if (state == "hw") {
+      instrument_motor_cw();
+      debugln("Turning CW");
+      delay(2000);
+      instrument_motor_ccw();
+      debugln("Turning CCW");
+      delay(2000);
+      stop_motors();
+      state = "";
+    }
 
-  // Kill motors
-  else if (state == "s") {
-    stop_motors();
-    state = "";
+    // Measure distances (mm)
+    else if (state == "irf") {
+      debugln(sharpF.getDist());
+      delay(1000);
+    }
+    else if (state == "irl") {
+      debugln(sharpL.getDist());
+      delay(1000);
+    }
+    else if (state == "irr") {
+      debugln(sharpR.getDist());
+      delay(1000);
+    }
+
+    // Line following
+    else if (state == "lb") {
+      going_forward = false;
+      follow_line();
+    }
+    else if (state == "lf") {
+      going_forward = true;
+      follow_line();
+    }
+    else if (state == "qtr") {
+      calibrate_qtrs();
+      state = "";
+    }
+
+    // Wall Following
+    else if (state == "wb") {
+      going_forward = false;
+      follow_wall();
+    }
+    else if (state == "wf") {
+      going_forward = true;
+      follow_wall();
+    }
+
+    // Move hub wheel
+    else if (state == "wd") {
+      servoW.write(servoW_down_angle);
+    }
+    else if (state == "wu") {
+      servoW.write(servoW_up_angle);
+    }
+
+    // Stop command
+    else if (state == "s") {
+      stop_motors();
+      state = "";
+    }
+
+    // Re-print menu
+    else if (state == "m") {
+      state = "";
+      break;
+    }
   }
 }
 
@@ -280,7 +357,7 @@ void turn_hub_from_hub() {
   char color = 'w';
   while (color != opposite_color) {
     color = read_color();
-    Serial2.println(color);
+    debugln(color);
   }
   servoW.write(servoW_up_angle);
   stop_motors();
@@ -318,15 +395,15 @@ void calibrate_qtrs() {
   // print biases
   debugln("qtr1 biases");
   for (int i = 0; i < 8; i++) {
-    Serial2.print(qtr1_biases[i]);
-    Serial2.print('\t');
+    debug(qtr1_biases[i]);
+    debug('\t');
   }
   debugln();
   
   debugln("qtr2 biases");
   for (int i = 0; i < 8; i++) {
-    Serial2.print(qtr2_biases[i]);
-    Serial2.print('\t');
+    debug(qtr2_biases[i]);
+    debug('\t');
   }
   debugln();
 }
@@ -337,17 +414,34 @@ void color_off() {
   digitalWrite(pin_blue, HIGH);
 }
 
+void compare_frequency() {
+  // HIGH = Turn left
+  // LOW = Turn right
+  int filtered = 0;
+  int unfiltered = 0;
+
+  int num_reads = 5;
+  int delay_time = 1;
+
+  // average multiple readings
+  for (int i = 0; i < num_reads; i++) {
+    filtered += analogRead(pin_freq_filt);
+    unfiltered += analogRead(pin_freq_unfilt);
+    delay(delay_time);
+  }
+
+  filtered = filtered/num_reads;
+  unfiltered = unfiltered/num_reads;
+  debug("filtered: "); debug(filtered);
+  debug("\tunfiltered: "); debugln(unfiltered);
+}
+
 // TODO: Figure out proper thresholds in practice
 char determine_color(int r, int g, int b) {
-  debug(r);
-  debug("\t");
-  debug(g);
-  debug("\t");
-  debugln(b);
 
   // determine color
   char color;
-  int w_threshold = 800;
+  int w_threshold = 700;
   int k_threshold = 250;
   if (r >= w_threshold && g >= w_threshold && b >= w_threshold) {
     color = 'w';
@@ -364,6 +458,13 @@ char determine_color(int r, int g, int b) {
   else if (b >= r && b >= g) {
     color = 'b';
   }
+  debug(r);
+  debug("\t");
+  debug(g);
+  debug("\t");
+  debug(b);
+  debug("\tColor:\t");
+  debugln(color);
   return color;
 }
 
@@ -670,15 +771,18 @@ void read_uno() {
     if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
       bounty_color = uno_message[7];
       identify_opposite_color();
-      Serial2.print("Bounty color:\t");
-      Serial2.print(bounty_color);
-      Serial2.print("\tOpposite color:\t");
-      Serial2.println(opposite_color);
+      debug("Bounty color:\t");
+      debug(bounty_color);
+      debug("\tOpposite color:\t");
+      debugln(opposite_color);
+    }
+    else if (uno_message.length() > 3 && uno_message.substring(0,4) == "test") {
+      test_state = !test_state;
     }
     else {  // receive state commands from uno
       state = uno_message;
-      Serial2.print("state set to: ");
-      Serial2.println(state);
+      debug("state set to: ");
+      debugln(state);
     }
   }
 }
@@ -693,24 +797,28 @@ void read_mega() {
     if (uno_message.length() > 4 && uno_message.substring(0,5) == "color") {
       bounty_color = uno_message[7];
       identify_opposite_color();
-      Serial.print("Bounty color:\t");
-      Serial.print(bounty_color);
-      Serial.print("\tOpposite color:\t");
-      Serial.println(opposite_color);
+      debug("Bounty color:\t");
+      debug(bounty_color);
+      debug("\tOpposite color:\t");
+      debugln(opposite_color);
+    }
+    else if (uno_message.length() > 3 && uno_message.substring(0,4) == "test") {
+      test_state = !test_state;
     }
     else {  // receive state commands from uno
       state = uno_message;
-      Serial.print("state set to: ");
-      Serial.println(state);
+      debug("state set to: ");
+      debugln(state);
     }
   }
 }
 
-// TODO: Hall effect sensor sucks ass now
+// TODO: Redo threshold after circuit rework
 void read_hall() {
   int threshold = 625;
   int reading = analogRead(pin_hall);
   debugln(reading);
+  delay(250);
   if (reading >= threshold) {
     at_magnet = true;
   }
@@ -720,22 +828,21 @@ void read_hall() {
 }
 
 void reset_encoder_tracking() {
-      stop_motors();
-      radians_traveled = 0;
-      theta_traveled_m1_old = 0;
-      theta_traveled_m2_old = 0;
-      EncoderM1.write(0);
-      EncoderM2.write(0);
-      Serial2.print("Destination Reached");
+  stop_motors();
+  radians_traveled = 0;
+  theta_traveled_m1_old = 0;
+  theta_traveled_m2_old = 0;
+  EncoderM1.write(0);
+  EncoderM2.write(0);
+  debug("Destination Reached");
 }
 
-// TODO: Redo measurements
 bool sense_gate() {
   int stop_dist = 255; // mm
   int dist = sharpF.getDist();
-  debug('Distance: ');
+  debug("Distance: ");
   debug(dist);
-  debugln(' mm');
+  debugln(" mm");
   if (dist <= stop_dist) {
     return true;
   }
