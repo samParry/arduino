@@ -192,6 +192,8 @@ void test_mode() {
   debugln("qtr        Calibrate QTR Sensors");
   debugln("wb         Follow wall (backward)");
   debugln("wf         Follow wall (forward)");
+  debugln("wu         Raise Hub Wheel");
+  debugln("wd         Lower Hub Wheel");
 
   while (test_state) {
     // Read comms at top of loop
