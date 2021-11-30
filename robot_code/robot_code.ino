@@ -3,7 +3,6 @@
 /****************************
  ** #defines and #includes **
  ****************************/
-
 #define DEBUG 1
 
 #if DEBUG == 1
@@ -23,9 +22,9 @@
 #include "DualTB9051FTGMotorShieldUnoMega.h";
 #include "Encoder.h";
 
-/***********************
- ** Global Variables ***
- ***********************/
+/**********************
+ ** Global Variables **
+ **********************/
 // *Declare pins*
 const int pin_motor_w1 = 5;
 const int pin_motor_w2 = 7;
@@ -37,6 +36,7 @@ const int pin_servo_h = 44;
 const uint8_t pins_qtr1[] = {22, 24, 26, 28, 30, 32, 34, 36};
 const uint8_t pins_qtr2[] = {23, 25, 27, 29, 31, 33, 35, 37};
 
+const byte pin_sharpC = A9;
 const byte pin_sharpL = A10;
 const byte pin_sharpR = A11;
 const byte pin_sharpF = A12;
@@ -65,6 +65,7 @@ int16_t qtr2_vals[8];
 
 // *Sharp IR Variables*
 double last_error = 0;
+SharpDistSensor sharpC(pin_sharpC, 1);
 SharpDistSensor sharpL(pin_sharpL, 1);
 SharpDistSensor sharpR(pin_sharpR, 1);
 SharpDistSensor sharpF(pin_sharpF, 1);
@@ -80,6 +81,7 @@ int servoW_up_angle = 135;
 int servoC_open_angle = 0;
 int servoC_shut_angle = 0;
 int servoH_down_angle = 180;
+int servoH_mid_angle = 150;
 int servoH_up_angle = 120;
 
 // *Motor variables*
@@ -125,21 +127,22 @@ void setup() {
   color_off();
 
   // *Write beginning servo angles*
-  servoW.attach(pin_servo_w);
+  // servoW.attach(pin_servo_w);
   // servoC.attach(pin_servo_c);
   // servoH.attach(pin_servo_h);
-  servoW.write(servoW_up_angle);
+  // servoW.write(servoW_up_angle);
   // servoC.write(servoC_open_angle);
   // servoH.write(servoH_down_angle);
 
   // *Initialize sensors*
-  qtr1.setTypeRC();
-  qtr2.setTypeRC();
-  qtr1.setSensorPins(pins_qtr1, 8);
-  qtr2.setSensorPins(pins_qtr2, 8);
-  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
+  // qtr1.setTypeRC();
+  // qtr2.setTypeRC();
+  // qtr1.setSensorPins(pins_qtr1, 8);
+  // qtr2.setSensorPins(pins_qtr2, 8);
+  // sharpC.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);  
+  // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  // sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
 
   // *Initialize motor driver*
   mshield.init();
@@ -166,34 +169,39 @@ void loop() {
   }
 }
 
-/***********************
- ** Testing Functions **
+/**********************
+ ** Testing Function **
  **********************/
 
 void test_mode() {
-  // print test option
   debugln("\n           Test Mode");
   debugln("------------------------------------------");
   debugln("Command    Description    m=menu");
   debugln("------------------------------------------");
-  debugln("c          Color Sensor");
+  debugln("c          Color sensor");
+  debugln("co         Claw open");
+  debugln("cs         Claw shut");
   debugln("ec         Drive circle (encoder)");
   debugln("el         Straight line (encoder)");
-  debugln("f          Compare Frequencies");
-  debugln("h          Hall Effect Sensor");
+  debugln("f          Compare frequencies");
+  debugln("h          Hall effect Sensor");
   debugln("hd         Hook arm down");
   debugln("hu         Hook arm up");
-  debugln("hw         Turn Hub Wheel");
+  debugln("hw         Turn hub wheel");
   debugln("irf        Rangefinder (front-facing)");
   debugln("irl        Rangefinder (left-facing)");
   debugln("irr        Rangefinder (right-facing)");
   debugln("lb         Line following (backward)");
   debugln("lf         Line following (forward)");
-  debugln("qtr        Calibrate QTR Sensors");
+  debugln("qtr        Calibrate QTR sensors");
+  debugln("qtrbwf      Scan for black/white with QTRs (forward)");
+  debugln("qtrbwb      Scan for black/white with QTRs (backward)");
+  debugln("tcw        Turn clockwise");
+  debugln("tccw       Turn counter-clockwise");
   debugln("wb         Follow wall (backward)");
   debugln("wf         Follow wall (forward)");
-  debugln("wu         Raise Hub Wheel");
-  debugln("wd         Lower Hub Wheel");
+  debugln("wu         Raise hub wheel");
+  debugln("wd         Lower hub wheel");
 
   while (test_state) {
     // Read comms at top of loop
@@ -204,6 +212,16 @@ void test_mode() {
     if (state == "c") {
       char color = read_color();
       delay(1000);
+    }
+
+    // Claw
+    else if (state == "co") {
+      claw_open();
+      state = "";
+    }
+    else if (state == "cs") {
+      claw_shut();
+      state = "";
     }
 
     // Encoders
@@ -297,6 +315,40 @@ void test_mode() {
       calibrate_qtrs();
       state = "";
     }
+    else if (state == "qtrbwf") {
+      going_forward = true;
+      char color = qtr_black_or_white();
+      
+      // print readings
+      debugln("qtr1 values");
+      for (int i = 0; i < 8; i++) {
+        debug(qtr1_vals[i]);
+        debug('\t');
+      }
+      debugln(color);
+    }
+    else if (state == "qtrbwb") {
+      going_forward = false;
+      char color = qtr_black_or_white();
+      
+      // print readings
+      debugln("qtr2 values");
+      for (int i = 0; i < 8; i++) {
+        debug(qtr2_vals[i]);
+        debug('\t');
+      }
+      debugln(color);      
+    }
+
+    // Turn 90 degrees
+    else if (state == "tcw") {
+      turn_cw();
+      state = "";
+    }
+    else if (state == "tccw") {
+      turn_ccw();
+      state = "";
+    }
 
     // Wall Following
     else if (state == "wb") {
@@ -330,10 +382,16 @@ void test_mode() {
   }
 }
 
-/*********************
- ** State Functions **
- *********************/
+/*******************************
+ ** State Functions: Entrance **
+ *******************************/
 
+// *Start*
+// TODO
+void approach_hub() {
+}
+
+// TODO
 void turn_hub_from_entrance() {
 
   // drop/rotate wheel arm
@@ -349,6 +407,11 @@ void turn_hub_from_entrance() {
   servoW.write(servoW_up_angle);
 }
 
+// TODO
+void enter_hub() {
+}
+
+// TODO
 void turn_hub_from_hub() {
 
   // drop/rotate wheel arm
@@ -365,9 +428,153 @@ void turn_hub_from_hub() {
   stop_motors();
 }
 
+/*****************************
+ ** State Functions: Canyon **
+ *****************************/
+
+// TODO: This might be callable once hub is rotated into place
+// The canyon doesn't require rotating the hub once on it
+void traverse_canyon() {
+  // follow line
+  // look for signal
+  // stop
+  stop_motors();
+}
+
+// TODO
+String face_bounty() {
+  // detect frequency
+  String turn_dir = compare_frequency();
+
+  // turn to face bounty
+  if (turn_dir == "cw") {
+    turn_cw();
+  }
+  else if (turn_dir == "ccw") {
+    turn_ccw();
+  }
+
+  // grab bounty
+  approach_block();
+  return turn_dir;
+}
+
+// TODO
+void back_to_center(String turn_dir) {
+  // follow line
+  // look for signal
+  // stop
+  stop_motors();
+
+  // turn opposite direction of initial turn
+  if (turn_dir == "cw") {
+    turn_ccw();
+  }
+  else if (turn_dir == "ccw") {
+    turn_cw();
+  }
+}
+
+// TODO
+void go_home() {
+  // The robot should have a line all the way to the start
+  follow_line();
+}
+
+/***************************
+ ** State Functions: Cave **
+ ***************************/
+
+// TODO
+void traverse_cave() {
+  // move forward a bit to exit hub (TEST THIS)
+  going_forward = true;
+  t = millis();
+  while (millis() - t <= 1500) {
+    mshield.setM1Speed(m1_speed);
+    mshield.setM2Speed(m2_speed);
+  }
+
+  // TODO: It needs to stop wall following when wall is gone
+  follow_wall();
+
+  approach_block();
+}
+
+// TODO
+void traverse_cave_backward() {
+  
+  // TODO: follow line till line is gone/wall appears
+  follow_line();
+
+  // TODO: follow wall till wall is gone/line appears
+  follow_line();
+}
+
+
+/*******************************
+ ** State Functions: Compound **
+ *******************************/
+
+// TODO
+void approach_gate() {
+  // drop arm and drive to gate
+  servoH.write(servoH_down_angle);
+  bool at_gate = false;
+  while (at_gate == false) {
+    follow_line();
+    at_gate = sense_gate();
+  }
+  stop_motors();
+}
+
+// TODO
+void raise_gate() {
+  // raise gate
+  servoH.write(servoH_up_angle);
+  delay(1000);
+  servoH.write(servoH_mid_angle);
+
+  // If gate isn't up, try again
+  bool at_gate = sense_gate();
+  if (at_gate) {
+
+    // reverse and approach gate again
+    going_forward = false;
+    t = millis();
+    while (millis() - t <= 1500) {
+      follow_line();
+    }
+    going_forward = true;
+    approach_gate();
+    servoH.write(servoH_up_angle);
+    delay(1000);
+    servoH.write(servoH_mid_angle);
+  }
+}
+
+/*****************************
+ ** State Functions: Return **
+ *****************************/
+
+
 /****************************
  ** User-Defined Functions **
  ****************************/
+
+// TODO: Make this work with an IR sensor measuring block distance
+void approach_block() {
+  going_forward = true;
+  int dist = sharpC.getDist();
+  int threshold = 20;
+  while (dist > threshold) {
+    follow_line();
+    dist = sharpC.getDist();
+  }
+  stop_motors();
+  claw_shut();
+  going_forward = false;
+}
 
 void calibrate_qtrs() {
   float sums1[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -410,13 +617,22 @@ void calibrate_qtrs() {
   debugln();
 }
 
+void claw_open() {
+  servoC.write(servoC_open_angle);
+}
+
+void claw_shut() {
+  servoC.write(servoC_shut_angle);
+}
+
 void color_off() {
   digitalWrite(pin_red, HIGH);
   digitalWrite(pin_green, HIGH);
   digitalWrite(pin_blue, HIGH);
 }
 
-void compare_frequency() {
+// TODO
+String compare_frequency() {
   // HIGH = Turn left
   // LOW = Turn right
   int filtered = 0;
@@ -436,6 +652,18 @@ void compare_frequency() {
   unfiltered = unfiltered/num_reads;
   debug("filtered: "); debug(filtered);
   debug("\tunfiltered: "); debugln(unfiltered);
+
+  // determine if signal is high or low
+
+  // return direction to turn
+  return "cw";
+}
+
+// TODO: rotate hub a little more to account for offset sensors
+void correct_hub() {
+  instrument_motor_cw();
+  delay(100);   // experiment with timing
+  stop_motors();
 }
 
 // TODO: Figure out proper thresholds in practice
@@ -572,6 +800,8 @@ void encoder_drive_circle(double desired_radius, double desired_theta) {
   last_time = current_time;
 }
 
+// TODO: Make it stop if it looses the line
+// TODO: Get it to recognize white or black
 void follow_line() {
   double Kp = 20, Kd = 20;
   float error_p, error_d, error;
@@ -685,6 +915,58 @@ void instrument_motor_cw() {
   digitalWrite(pin_motor_w2, HIGH);
 }
 
+// TODO: test
+char qtr_black_or_white() {
+  // returns 'w' for white
+  // returns 'b' for black
+  // returns 'n' for no
+  int white_threshold = 2000;
+  int black_threshold = 200;
+  bool black = true;
+  bool white = true;
+
+  // read qtr
+  if (going_forward) {
+    qtr1.read(qtr1_vals);
+  }
+  else {
+    qtr2.read(qtr2_vals);
+  }
+
+  // check middle 4 sensors
+  for (int i = 2; i < 6; i++) {
+    if (going_forward) {
+      if (qtr1_vals[i] < white_threshold) {
+        white = false;
+        if (white == false && qtr1_vals[i] > black_threshold) {
+          black = false;
+          return 'n';
+        }
+      }
+    }
+    else {
+      if (qtr2_vals[i] < white_threshold) {
+        white = false;
+        if (white == false && qtr2_vals[i] > black_threshold) {
+          black = false;
+          return 'n';
+        }
+      }
+    }
+  }
+
+  if (white == true) {
+    return 'w';
+  }
+  else if (black == true) {
+    return 'b';
+  }
+  else {
+    return 'n';
+  }
+}
+
+// TODO: Search for white/black
 float line_error() {
 
   // read front or rear values
@@ -839,6 +1121,7 @@ void reset_encoder_tracking() {
   debug("Destination Reached");
 }
 
+// TODO: tweak threshold on actual gate
 bool sense_gate() {
   int stop_dist = 255; // mm
   int dist = sharpF.getDist();
@@ -856,4 +1139,12 @@ void stop_motors() {
   mshield.setM2Speed(0);
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, LOW);
+}
+
+// TODO
+void turn_cw() {
+}
+
+// TODO
+void turn_ccw() {
 }
