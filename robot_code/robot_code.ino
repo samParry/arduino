@@ -102,9 +102,9 @@ double radians_traveled = 0;
 String state = "";
 bool test_state = true;
 bool going_forward = false;
-bool at_magnet = false;
 char bounty_color;
 char opposite_color;
+String turn_dir;
 String uno_message;
 
 // *Time Variable*
@@ -139,7 +139,7 @@ void setup() {
   // qtr2.setTypeRC();
   // qtr1.setSensorPins(pins_qtr1, 8);
   // qtr2.setSensorPins(pins_qtr2, 8);
-  // sharpC.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);  
+  sharpC.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
   // sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
@@ -163,10 +163,63 @@ void loop() {
 
   read_uno();
   read_mega();
-
   if (test_state) {
     test_mode();
   }
+
+  // *** START ***
+  else if (state == "start") {
+    start();
+  }
+  else if (state == "ahub") {
+    approach_hub();
+  }
+  else if (state == "turn_hub1") {
+    turn_hub_from_entrance();
+  }
+  else if (state == "enter_hub") {
+    enter_hub();
+  }
+  else if (state == "turn_hub2") {
+    turn_hub_from_hub();
+  }
+
+  // *** CANYON ***
+  else if (state == "enter_canyon") {
+    enter_canyon();
+  }
+  else if (state == "face_block") {
+    face_bounty();
+  }
+  else if (state == "block_canyon") {
+    get_block_canyon();
+  }
+  else if (state == "to_center") {
+    back_to_center();
+  }
+  else if (state == "go_home") {
+    go_home();
+  }
+
+
+  // *** CAVE ***
+  else if (state == "enter_cave") {
+    enter_cave();
+  }
+
+  // *** COMPOUND ***
+  else if (state == "acompound") {
+    approach_gate();
+  }
+  else if (state == "gate") {
+    raise_gate();
+  }
+  else if (state == "block_compound") {
+    get_block_compound();
+  }
+
+  // *** RETURN ***
+
 }
 
 /**********************
@@ -188,14 +241,15 @@ void test_mode() {
   debugln("hd         Hook arm down");
   debugln("hu         Hook arm up");
   debugln("hw         Turn hub wheel");
+  debugln("irc        Rangefinder (block-facing)");
   debugln("irf        Rangefinder (front-facing)");
   debugln("irl        Rangefinder (left-facing)");
   debugln("irr        Rangefinder (right-facing)");
   debugln("lb         Line following (backward)");
   debugln("lf         Line following (forward)");
   debugln("qtr        Calibrate QTR sensors");
-  debugln("qtrbwf      Scan for black/white with QTRs (forward)");
-  debugln("qtrbwb      Scan for black/white with QTRs (backward)");
+  debugln("qtrbwf     Scan for black/white with QTRs (forward)");
+  debugln("qtrbwb     Scan for black/white with QTRs (backward)");
   debugln("tcw        Turn clockwise");
   debugln("tccw       Turn counter-clockwise");
   debugln("wb         Follow wall (backward)");
@@ -263,7 +317,7 @@ void test_mode() {
 
     // Hall Effect sensor
     else if (state == "h") {
-      read_hall();
+      bool at_magnet = read_hall();
     }
 
     // Hook arm
@@ -289,6 +343,10 @@ void test_mode() {
     }
 
     // Measure distances (mm)
+    else if (state == "irc") {
+      debugln(sharpC.getDist());
+      delay(1000);
+    }
     else if (state == "irf") {
       debugln(sharpF.getDist());
       delay(1000);
@@ -382,33 +440,60 @@ void test_mode() {
   }
 }
 
-/*******************************
- ** State Functions: Entrance **
- *******************************/
+/****************************
+ ** State Functions: Start **
+ ****************************/
 
-// *Start*
-// TODO
-void approach_hub() {
+void start() {
+  // get over the line with a timed motor burn
+  debugln("Starting");
+  going_forward = false;
+  t = millis();
+  while (millis() - t <= 1000) {
+    mshield.setM1Speed(-base_speed);
+    mshield.setM2Speed(-base_speed);
+  }
+  state = "ahub"; debugln("Approaching Hub");
 }
 
-// TODO
+void approach_hub() {
+  // follow line until black tape
+  char color = qtr_black_or_white();
+  if (color == 'n') {
+    follow_line();
+  }
+  else {
+    stop_motors();
+    state = "turn_hub1"; debugln("Turning Hub");
+  }
+}
+
 void turn_hub_from_entrance() {
 
   // drop/rotate wheel arm
   servoW.write(servoW_down_angle);
   instrument_motor_cw();
 
-  // stop/raise arm motor when magnet sensed
-  at_magnet = false;
-  while (not at_magnet) {
-    read_hall();
+  // stop/raise arm motor when magnet is detected
+  while (not read_hall()) {
   }
   stop_motors();
   servoW.write(servoW_up_angle);
+
+  // Turn the hub to account for offset sensor
+  correct_hub("cw");
+
+  if (bounty_color == 'g') {
+    state = "enter_canyon"; debugln("Entering Canyon");
+  }
+  else {
+    state = "enter_hub"; debugln("Entering Hub");
+  }
 }
 
-// TODO
+// TODO: Use encoders
 void enter_hub() {
+  state = "turn_hub2"; debugln("Turning Hub");
 }
 
 // TODO
@@ -416,16 +501,28 @@ void turn_hub_from_hub() {
 
   // drop/rotate wheel arm
   servoW.write(servoW_down_angle);
-  instrument_motor_cw();
+  if (bounty_color == 'r') {
+    instrument_motor_cw();
+  }
+  else {
+    instrument_motor_ccw();
+  }
 
   // stop rotation when color is found
-  char color = 'w';
-  while (color != opposite_color) {
-    color = read_color();
-    debugln(color);
+  char color = read_color();
+  if (color == opposite_color) {
+    stop_motors();
+    correct_hub("cw");
+    servoW.write(servoW_up_angle);
+
+    // update state
+    if (bounty_color == 'r') {
+      state = "enter_cave"; debugln("Entering Cave");
+    }
+    else if (bounty_color == 'b') {
+      state = "acompound"; debugln("Approaching Gate");
+    }
   }
-  servoW.write(servoW_up_angle);
-  stop_motors();
 }
 
 /*****************************
@@ -434,17 +531,20 @@ void turn_hub_from_hub() {
 
 // TODO: This might be callable once hub is rotated into place
 // The canyon doesn't require rotating the hub once on it
-void traverse_canyon() {
-  // follow line
-  // look for signal
-  // stop
-  stop_motors();
+void enter_canyon() {
+  if (not at_led()) {
+    follow_line();
+  }
+  else {
+    stop_motors();
+    state = "face_block"; debugln("Turning to face bounty");
+  }
 }
 
 // TODO
-String face_bounty() {
+void face_bounty() {
   // detect frequency
-  String turn_dir = compare_frequency();
+  turn_dir = compare_frequency();
 
   // turn to face bounty
   if (turn_dir == "cw") {
@@ -453,32 +553,43 @@ String face_bounty() {
   else if (turn_dir == "ccw") {
     turn_ccw();
   }
-
-  // grab bounty
-  approach_block();
-  return turn_dir;
+  state = "block_canyon"; debugln("Collecting Bounty");
 }
 
 // TODO
-void back_to_center(String turn_dir) {
-  // follow line
-  // look for signal
-  // stop
-  stop_motors();
-
-  // turn opposite direction of initial turn
-  if (turn_dir == "cw") {
-    turn_ccw();
-  }
-  else if (turn_dir == "ccw") {
-    turn_cw();
-  }
+void get_block_canyon() {
+  get_block();
+  state = "to_center"; debugln("Returning to Center");
 }
 
 // TODO
+void back_to_center() {
+  if (not at_led()) {
+    follow_line();
+  }
+  else {
+    stop_motors();
+    
+    // turn opposite direction of initial turn
+    if (turn_dir == "cw") {
+      turn_ccw();
+    }
+    else if (turn_dir == "ccw") {
+      turn_cw();
+    }
+    state = "go_home"; debugln("Returning Home");
+  }
+}
+
 void go_home() {
   // The robot should have a line all the way to the start
-  follow_line();
+  if (qtr_black_or_white() != 'w') {
+    follow_line();
+  }
+  else {
+    stop_motors();
+    state = ""; debugln("Bounty Returned. Awaiting New Bounty.");
+  }
 }
 
 /***************************
@@ -486,19 +597,23 @@ void go_home() {
  ***************************/
 
 // TODO
+void enter_cave() {
+}
+
+// TODO
 void traverse_cave() {
   // move forward a bit to exit hub (TEST THIS)
   going_forward = true;
   t = millis();
   while (millis() - t <= 1500) {
-    mshield.setM1Speed(m1_speed);
-    mshield.setM2Speed(m2_speed);
+    mshield.setM1Speed(-base_speed);
+    mshield.setM2Speed(-base_speed);
   }
 
   // TODO: It needs to stop wall following when wall is gone
   follow_wall();
 
-  approach_block();
+  get_block();
 }
 
 // TODO
@@ -511,7 +626,6 @@ void traverse_cave_backward() {
   follow_line();
 }
 
-
 /*******************************
  ** State Functions: Compound **
  *******************************/
@@ -520,12 +634,11 @@ void traverse_cave_backward() {
 void approach_gate() {
   // drop arm and drive to gate
   servoH.write(servoH_down_angle);
-  bool at_gate = false;
-  while (at_gate == false) {
-    follow_line();
-    at_gate = sense_gate();
+  follow_line();
+  if (sense_gate()) {
+    stop_motors();
+    state = "gate"; debugln("Lifting Gate");
   }
-  stop_motors();
 }
 
 // TODO
@@ -536,8 +649,8 @@ void raise_gate() {
   servoH.write(servoH_mid_angle);
 
   // If gate isn't up, try again
-  bool at_gate = sense_gate();
-  if (at_gate) {
+  if (sense_gate()) {
+    debugln("Failed to lift gate... Trying again");
 
     // reverse and approach gate again
     going_forward = false;
@@ -551,6 +664,14 @@ void raise_gate() {
     delay(1000);
     servoH.write(servoH_mid_angle);
   }
+  else {
+    state = "block_compound"; debugln("Collecting Bounty");
+  }
+}
+
+// TODO: figure out how to stop line following
+void get_block_compound() {
+  get_block();
 }
 
 /*****************************
@@ -558,22 +679,26 @@ void raise_gate() {
  *****************************/
 
 
-/****************************
- ** User-Defined Functions **
- ****************************/
+/********************
+ ** Core Functions **
+ ********************/
 
-// TODO: Make this work with an IR sensor measuring block distance
-void approach_block() {
+// TODO
+bool at_led() {
+  return false;
+}
+
+void get_block() {
   going_forward = true;
-  int dist = sharpC.getDist();
-  int threshold = 20;
-  while (dist > threshold) {
+  if (sharpC.getDist() > 20) {
     follow_line();
-    dist = sharpC.getDist();
   }
-  stop_motors();
-  claw_shut();
-  going_forward = false;
+  else {
+    stop_motors();
+    claw_shut();
+    going_forward = false;
+    debugln("Bounty Secured");
+  }
 }
 
 void calibrate_qtrs() {
@@ -660,8 +785,14 @@ String compare_frequency() {
 }
 
 // TODO: rotate hub a little more to account for offset sensors
-void correct_hub() {
-  instrument_motor_cw();
+void correct_hub(String dir) {
+  
+  if (dir == "cw") {
+    instrument_motor_cw();
+  }
+  else if (dir == "ccw") {
+    instrument_motor_ccw();
+  }
   delay(100);   // experiment with timing
   stop_motors();
 }
@@ -915,13 +1046,13 @@ void instrument_motor_cw() {
   digitalWrite(pin_motor_w2, HIGH);
 }
 
-// TODO: test
 char qtr_black_or_white() {
   // returns 'w' for white
   // returns 'b' for black
   // returns 'n' for no
-  int white_threshold = 2000;
-  int black_threshold = 200;
+
+  int white_threshold = 500;
+  int black_threshold = 2000;
   bool black = true;
   bool white = true;
 
@@ -936,18 +1067,18 @@ char qtr_black_or_white() {
   // check middle 4 sensors
   for (int i = 2; i < 6; i++) {
     if (going_forward) {
-      if (qtr1_vals[i] < white_threshold) {
+      if (qtr1_vals[i] > white_threshold) {
         white = false;
-        if (white == false && qtr1_vals[i] > black_threshold) {
+        if (white == false && qtr1_vals[i] <= black_threshold) {
           black = false;
           return 'n';
         }
       }
     }
     else {
-      if (qtr2_vals[i] < white_threshold) {
+      if (qtr2_vals[i] > white_threshold) {
         white = false;
-        if (white == false && qtr2_vals[i] > black_threshold) {
+        if (white == false && qtr2_vals[i] <= black_threshold) {
           black = false;
           return 'n';
         }
@@ -1098,16 +1229,15 @@ void read_mega() {
 }
 
 // TODO: Redo threshold after circuit rework
-void read_hall() {
+bool read_hall() {
   int threshold = 625;
   int reading = analogRead(pin_hall);
   debugln(reading);
-  delay(250);
   if (reading >= threshold) {
-    at_magnet = true;
+    return true;
   }
   else {
-    at_magnet = false;
+    return false;
   }
 }
 
