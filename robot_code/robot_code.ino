@@ -3,7 +3,7 @@
 /****************************
  ** #defines and #includes **
  ****************************/
-#define DEBUG 1
+#define DEBUG 2
 
 #if DEBUG == 1
 #define debug(x) Serial.print(x)
@@ -58,8 +58,8 @@ const int pin_encoder_m2b = 21;
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
-int16_t qtr1_biases[] = {654, 552, 516, 488, 504, 504, 552, 603};
-int16_t qtr2_biases[] = {600, 520, 549, 322, 506, 582, 554, 653};
+int16_t qtr1_biases[] = {362, 285, 252, 243, 243, 228, 240, 219};
+int16_t qtr2_biases[] = {185, 117, 98, 81, 90, 120, 170, 286};
 int16_t qtr1_vals[8];
 int16_t qtr2_vals[8];
 
@@ -80,9 +80,9 @@ int servoW_down_angle = 130;
 int servoW_up_angle = 135;
 int servoC_open_angle = 0;
 int servoC_shut_angle = 0;
-int servoH_down_angle = 180;
-int servoH_mid_angle = 150;
-int servoH_up_angle = 120;
+int servoH_down_angle = 0;
+int servoH_mid_angle = 30;
+int servoH_up_angle = 60;
 
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
@@ -100,7 +100,7 @@ double radians_traveled = 0;
 
 // *State Variables*
 String state = "";
-bool test_state = true;
+bool test_state = false;
 bool going_forward = false;
 char bounty_color;
 char opposite_color;
@@ -127,22 +127,22 @@ void setup() {
   color_off();
 
   // *Write beginning servo angles*
-  // servoW.attach(pin_servo_w);
-  // servoC.attach(pin_servo_c);
-  // servoH.attach(pin_servo_h);
-  // servoW.write(servoW_up_angle);
-  // servoC.write(servoC_open_angle);
-  // servoH.write(servoH_down_angle);
+  servoW.attach(pin_servo_w);
+  servoC.attach(pin_servo_c);
+  servoH.attach(pin_servo_h);
+  servoW.write(servoW_up_angle);
+  servoC.write(servoC_open_angle);
+  servoH.write(servoH_down_angle);
 
   // *Initialize sensors*
-  // qtr1.setTypeRC();
-  // qtr2.setTypeRC();
-  // qtr1.setSensorPins(pins_qtr1, 8);
-  // qtr2.setSensorPins(pins_qtr2, 8);
+  qtr1.setTypeRC();
+  qtr2.setTypeRC();
+  qtr1.setSensorPins(pins_qtr1, 8);
+  qtr2.setSensorPins(pins_qtr2, 8);
   sharpC.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  // sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  // sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
-  // sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
+  sharpL.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpR.setModel(SharpDistSensor::GP2Y0A51SK0F_5V_DS);
+  sharpF.setModel(SharpDistSensor::GP2Y0A41SK0F_5V_DS);
 
   // *Initialize motor driver*
   mshield.init();
@@ -220,6 +220,12 @@ void loop() {
 
   // *** RETURN ***
 
+
+
+  else if (state == "s") {
+    stop_motors();
+    state = "";
+  }
 }
 
 /**********************
@@ -239,6 +245,7 @@ void test_mode() {
   debugln("f          Compare frequencies");
   debugln("h          Hall effect Sensor");
   debugln("hd         Hook arm down");
+  debugln("hm         Hook arm mid");
   debugln("hu         Hook arm up");
   debugln("hw         Turn hub wheel");
   debugln("irc        Rangefinder (block-facing)");
@@ -254,6 +261,8 @@ void test_mode() {
   debugln("tccw       Turn counter-clockwise");
   debugln("wb         Follow wall (backward)");
   debugln("wf         Follow wall (forward)");
+  debugln("wcw        Turn wheel clockwise");
+  debugln("wccw       Turn wheel counter-clockwise");
   debugln("wu         Raise hub wheel");
   debugln("wd         Lower hub wheel");
 
@@ -312,7 +321,7 @@ void test_mode() {
     // Compare frequencies
     else if (state == "f") {
       compare_frequency();
-      delay(500);
+      state = "";
     }
 
     // Hall Effect sensor
@@ -323,10 +332,17 @@ void test_mode() {
     // Hook arm
     else if (state == "hd") {
       servoH.write(servoH_down_angle);
+      debugln(servoH.read());
+      state = "";
+    }
+    else if (state == "hm") {
+      servoH.write(servoH_mid_angle);
+      debugln(servoH.read());
       state = "";
     }
     else if (state == "hu") {
-      servoH.write(servoW_up_angle);
+      servoH.write(servoH_up_angle);
+      debugln(servoH.read());
       state = "";
     }
 
@@ -419,6 +435,12 @@ void test_mode() {
     }
 
     // Move hub wheel
+    else if (state == "wcw") {
+      instrument_motor_cw();
+    }
+    else if (state == "wccw") {
+      instrument_motor_ccw();
+    }
     else if (state == "wd") {
       servoW.write(servoW_down_angle);
     }
@@ -437,6 +459,25 @@ void test_mode() {
       state = "";
       break;
     }
+  }
+}
+
+void print_qtr(int num) {
+  if (num == 1) {
+    debugln("qtr1 values");
+    for (int i = 0; i < 8; i++) {
+      debug(qtr1_vals[i]);
+      debug('\t');
+    }
+    debugln();  
+  }
+  else if (num == 2) {
+    debugln("qtr1 values");
+    for (int i = 0; i < 8; i++) {
+      debug(qtr2_vals[i]);
+      debug('\t');
+    }
+    debugln(); 
   }
 }
 
@@ -459,6 +500,8 @@ void start() {
 void approach_hub() {
   // follow line until black tape
   char color = qtr_black_or_white();
+  debugln(color);
+  // print_qtr(2);
   if (color == 'n') {
     follow_line();
   }
@@ -635,7 +678,7 @@ void approach_gate() {
   // drop arm and drive to gate
   servoH.write(servoH_down_angle);
   follow_line();
-  if (sense_gate()) {
+  if (sense_gate(255)) {
     stop_motors();
     state = "gate"; debugln("Lifting Gate");
   }
@@ -649,7 +692,7 @@ void raise_gate() {
   servoH.write(servoH_mid_angle);
 
   // If gate isn't up, try again
-  if (sense_gate()) {
+  if (sense_gate(300)) {
     debugln("Failed to lift gate... Trying again");
 
     // reverse and approach gate again
@@ -756,29 +799,57 @@ void color_off() {
   digitalWrite(pin_blue, HIGH);
 }
 
-// TODO
 String compare_frequency() {
   // HIGH = Turn left
   // LOW = Turn right
-  int filtered = 0;
-  int unfiltered = 0;
+  
+  int num_reads = 10;
+  int threshold = 400; // play with this
 
-  int num_reads = 5;
-  int delay_time = 1;
+  int filt = 0;
+  int filt_max[num_reads] = {};
+  int filt_min[num_reads] = {};
 
-  // average multiple readings
+  int unfilt = 0;
+  int unfilt_max[num_reads] = {};
+  int unfilt_min[num_reads] = {};
+
+  int ave_filt_amp = 0;
+  int ave_unfilt_amp = 0;
+
   for (int i = 0; i < num_reads; i++) {
-    filtered += analogRead(pin_freq_filt);
-    unfiltered += analogRead(pin_freq_unfilt);
-    delay(delay_time);
+
+    t = millis();
+    while (millis() - t < 100) {
+      filt = analogRead(pin_freq_filt);
+      unfilt = analogRead(pin_freq_unfilt);
+
+      // set max and min readings
+      filt_max[i] = (filt > filt_max[i]) ? filt : filt_max[i];
+      filt_min[i] = (filt < filt_min[i]) ? filt : filt_min[i];
+      unfilt_max[i] = (unfilt > unfilt_max[i]) ? unfilt : unfilt_max[i];
+      unfilt_min[i] = (unfilt < unfilt_min[i]) ? unfilt : unfilt_min[i];
+    }
+
+    // approach 1: average amplitude
+    ave_filt_amp += filt_max[i] - filt_min[i];
+    ave_unfilt_amp += unfilt_max[i] - unfilt_min[i];
   }
 
-  filtered = filtered/num_reads;
-  unfiltered = unfiltered/num_reads;
-  debug("filtered: "); debug(filtered);
-  debug("\tunfiltered: "); debugln(unfiltered);
+  ave_filt_amp /= num_reads;
+  ave_unfilt_amp /= num_reads;
+  debugln("Approach 1");
+  debug("ave filt amp: "); debug(ave_filt_amp);
+  debug("\tave unfilt amp: "); debugln(ave_unfilt_amp);  
 
-  // determine if signal is high or low
+
+  // approach 2: decision by majority
+  int diffs[] = {(filt_max - filt_min) - (unfilt_max - unfilt_min)};
+  debugln("Approach 2");
+  for (int i = 0; i < num_reads; i++) {
+    debug(diffs[i]); debug('\t');
+  }
+  debugln();
 
   // return direction to turn
   return "cw";
@@ -945,14 +1016,14 @@ void follow_line() {
   error = Kp*error_p + Kd*error_d;
   error *= pid_scaling; // apply pid error scaling
 
-  debug("error_p:\t");
-  debug(error_p);
-  debug("\terror_d\t");
-  debug(error_d);
-  debug("\terror:\t");
-  debug(error);
-  debug("\tdt:\t");
-  debugln(delta_time);
+  // debug("error_p:\t");
+  // debug(error_p);
+  // debug("\terror_d\t");
+  // debug(error_d);
+  // debug("\terror:\t");
+  // debug(error);
+  // debug("\tdt:\t");
+  // debugln(delta_time);
 
   // correct motors by varying speed
   if (going_forward) {
@@ -1069,7 +1140,7 @@ char qtr_black_or_white() {
     if (going_forward) {
       if (qtr1_vals[i] > white_threshold) {
         white = false;
-        if (white == false && qtr1_vals[i] <= black_threshold) {
+        if (white == false && qtr1_vals[i] < black_threshold) {
           black = false;
           return 'n';
         }
@@ -1078,7 +1149,7 @@ char qtr_black_or_white() {
     else {
       if (qtr2_vals[i] > white_threshold) {
         white = false;
-        if (white == false && qtr2_vals[i] <= black_threshold) {
+        if (white == false && qtr2_vals[i] < black_threshold) {
           black = false;
           return 'n';
         }
@@ -1091,9 +1162,6 @@ char qtr_black_or_white() {
   }
   else if (black == true) {
     return 'b';
-  }
-  else {
-    return 'n';
   }
 }
 
@@ -1251,9 +1319,8 @@ void reset_encoder_tracking() {
   debug("Destination Reached");
 }
 
-// TODO: tweak threshold on actual gate
-bool sense_gate() {
-  int stop_dist = 255; // mm
+// TODO: make sure optional arg works
+bool sense_gate(int stop_dist) {
   int dist = sharpF.getDist();
   debug("Distance: ");
   debug(dist);
@@ -1271,10 +1338,24 @@ void stop_motors() {
   digitalWrite(pin_motor_w2, LOW);
 }
 
-// TODO
+// TODO: turn time
 void turn_cw() {
+  t = millis();
+  int turn_time = 2400; // ms
+  while (millis() - t < turn_time) {
+    mshield.setM1Speed(-base_speed);
+    mshield.setM2Speed(base_speed);
+  }
+  stop_motors();
 }
 
-// TODO
+// TODO: turn time
 void turn_ccw() {
+  t = millis();
+  int turn_time = 2500; // ms
+  while (millis() - t < turn_time) {
+    mshield.setM1Speed(base_speed);
+    mshield.setM2Speed(-base_speed);
+  }
+  stop_motors();
 }

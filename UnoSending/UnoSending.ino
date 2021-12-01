@@ -20,8 +20,8 @@ void setup() {
   color_off();
 
   Serial.begin(9600);
-  Serial.println("Hello Computer!");
   mySerial.begin(9600);
+  Serial.println("Hello Computer!");
 }
 
 void loop() {
