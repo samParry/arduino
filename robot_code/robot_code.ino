@@ -33,8 +33,8 @@ const int pin_servo_w = 46;
 const int pin_servo_c = 45;
 const int pin_servo_h = 44;
 
-const uint8_t pins_qtr1[] = {22, 24, 26, 28, 30, 32, 34, 36};
-const uint8_t pins_qtr2[] = {23, 25, 27, 29, 31, 33, 35, 37};
+const uint8_t pins_qtr1[] = {327, 268, 232, 225, 225, 222, 225, 223};
+const uint8_t pins_qtr2[] = {141, 128, 141, 92, 141, 148, 148, 174};
 
 const byte pin_sharpC = A9;
 const byte pin_sharpL = A10;
@@ -105,7 +105,7 @@ double dist_traveled = 0;
 String state = "";
 bool test_state = true;
 bool going_forward = true;
-char bounty_color;
+char bounty_color = 'r';
 char opposite_color;
 String turn_dir;
 String uno_message;
@@ -131,12 +131,12 @@ void setup() {
   color_off();
 
   // *Write beginning servo angles*
-  // servoW.attach(pin_servo_w);
-  // servoC.attach(pin_servo_c);
-  // servoH.attach(pin_servo_h);
-  // servoW.write(servoW_up_angle);
-  // servoC.write(servoC_open_angle);
-  // servoH.write(servoH_down_angle);
+  servoW.attach(pin_servo_w);
+  servoC.attach(pin_servo_c);
+  servoH.attach(pin_servo_h);
+  servoW.write(servoW_up_angle);
+  servoC.write(servoC_open_angle);
+  servoH.write(servoH_down_angle);
 
   // *Initialize sensors*
   qtr1.setTypeRC();
@@ -153,7 +153,7 @@ void setup() {
   mshield.enableDrivers();
   mshield.flipM2(true);
 
-  // *Initialize communication*
+  // *Initialize communicatio
   Serial.begin(9600);
   Serial2.begin(9600);
   debugln("Mega Ready");
@@ -170,7 +170,6 @@ void loop() {
   if (test_state) {
     test_mode();
   }
-
 
   // *** START ***
   else if (state == "start") {
@@ -459,7 +458,7 @@ void test_mode() {
 
     // Ask for permission
     else if (state == "perm") {
-      get_permission();
+      
     }
 
     // Turn 90 degrees
@@ -538,12 +537,12 @@ void start() {
   debugln("Starting");
   going_forward = false;
   t = millis();
-  while (millis() - t <= 1000) {
+  while (millis() - t <= 4000) {
     mshield.setM1Speed(-base_speed);
     mshield.setM2Speed(-base_speed);
   }
   state = "ahub"; debugln("Approaching Hub");
-  get_permission();
+  
 }
 
 void approach_hub() {
@@ -557,7 +556,7 @@ void approach_hub() {
   else {
     stop_motors();
     state = "turn_hub1"; debugln("Turning Hub");
-    get_permission();
+    
   }
 }
 
@@ -573,11 +572,11 @@ void turn_hub_from_entrance() {
   correct_hub_offset("cw");
   if (bounty_color == 'g') {
     state = "enter_canyon"; debugln("Entering Canyon");
-    get_permission();
+    
   }
   else {
     state = "enter_hub"; debugln("Entering Hub");
-    get_permission();
+    
   }
 }
 
@@ -592,7 +591,7 @@ void enter_hub() {
     stop_motors();
   }
   state = "turn_hub2"; debugln("Turning Hub");
-  get_permission();
+  
 }
 
 // TODO: test
@@ -616,11 +615,11 @@ void turn_hub_from_hub() {
     // update state
     if (bounty_color == 'r') {
       state = "enter_cave"; debugln("Entering Cave");
-      get_permission();
+      
     }
     else if (bounty_color == 'b') {
       state = "acompound"; debugln("Approaching Gate");
-      get_permission();
+      
     }
   }
 }
@@ -647,7 +646,7 @@ void enter_canyon() {
   else {
     stop_motors();
     state = "face_block"; debugln("Turning to face bounty");
-    get_permission();
+    
   }
 }
 
@@ -664,7 +663,7 @@ void face_bounty() {
   else if (turn_dir == "ccw") {
     turn_ccw();
   }
-  get_permission();
+  
   state = "block_canyon"; debugln("Collecting Bounty");
 }
 
@@ -672,7 +671,7 @@ void face_bounty() {
 void get_block_canyon() {
   get_block();
   state = "to_center"; debugln("Returning to Center");
-  get_permission();
+  
 }
 
 // TODO: use encoders for this
@@ -694,7 +693,7 @@ void back_to_center() {
       turn_cw();
     }
     state = "go_home"; debugln("Returning Home");
-    get_permission();
+    
   }
 }
 
@@ -718,7 +717,6 @@ void enter_cave() {
     stop_motors();
   }
   state = "trav_cave1"; debugln("Traversing Cave");
-  get_permission();
 }
 
 // TODO: what ir value means that the wall is gone?
@@ -729,8 +727,8 @@ void traverse_cave() {
     follow_wall();
   }
   else {
+    drive_straight(200);
     state = "mudhorn"; debugln("Killing Mudhorn");
-    get_permission();
   }
 }
 
@@ -740,14 +738,14 @@ void mudhorn() {
   turn_cw();
   turn_ccw();
   turn_ccw();
+  turn_cw();
   state = "block_cave"; debugln("Collecting Bounty");
-  get_permission();
 }
 
 void get_block_cave() {
   get_block();
   state = "trav_cave2"; debugln("Returning to Hub");
-  get_permission();
+  
 }
 
 // TODO: test transition between wall and line following
@@ -764,7 +762,7 @@ void traverse_cave_backward() {
   }
   else {
     state = ""; debugln("TODO: write next function");
-    get_permission();
+    
   }
 }
 
@@ -780,7 +778,6 @@ void approach_gate() {
   if (sense_gate(255)) {
     stop_motors();
     state = "gate"; debugln("Lifting Gate");
-    get_permission();
   }
 }
 
@@ -809,7 +806,7 @@ void raise_gate() {
   }
   else {
     state = "block_compound"; debugln("Collecting Bounty");
-    get_permission();
+    
   }
 }
 
@@ -817,7 +814,7 @@ void raise_gate() {
 void get_block_compound() {
   get_block();
   state = "";
-  get_permission();
+  
 }
 
 /*****************************
@@ -828,19 +825,17 @@ void get_block_compound() {
 void reenter_hub() {
 
   state = "hub_back"; debugln("Alligning Hub");
-  get_permission();
+  
 }
 
 void turn_hub_back() {
 
   state = "go_home"; debugln("Returning Home");
-  get_permission();
 }
 
 void go_home() {
   // The robot should have a line all the way to the start
   follow_line();
-  get_permission();
 }
 
 /********************
@@ -1243,24 +1238,6 @@ void get_block() {
   claw_open();
 }
 
-void get_permission() {
-  stop_motors();
-  debugln("Permission to proceed? [y/n]");
-  while (decision != "y" && decision != "n") {
-    read_uno();
-    read_mega();
-  }
-
-  if (decision == "y") {
-    debugln("Permission Recieved");
-  }
-  else if (decision == "n") {
-    debugln("Permission Denied");
-    state = "";
-  }
-  decision = "";
-}
-
 void identify_opposite_color() {
   // determine color opposite bounty color on hub
   if (bounty_color == 'r') {
@@ -1430,9 +1407,6 @@ void read_uno() {
       test_state = !test_state;
       debug("Test Mode: "); debugln(test_state);
     }
-    else if (uno_message == "y" || uno_message == "n") {
-      decision = uno_message;
-    }
     else {  // receive state commands from uno
       state = uno_message;
       debug("state set to: ");
@@ -1459,10 +1433,6 @@ void read_mega() {
     else if (uno_message.length() > 3 && uno_message.substring(0,4) == "test") {
       test_state = !test_state;
       debug("Test Mode: "); debugln(test_state);
-    }
-    else if (uno_message == "y" || uno_message == "n") {
-      decision = uno_message;
-      // debugln(decision);
     }
     else {  // receive state commands from uno
       state = uno_message;
