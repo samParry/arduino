@@ -3,7 +3,7 @@
 /****************************
  ** #defines and #includes **
  ****************************/
-#define DEBUG 1
+#define DEBUG 2
 
 #if DEBUG == 1
 #define debug(x) Serial.print(x)
@@ -33,8 +33,8 @@ const int pin_servo_w = 46;
 const int pin_servo_c = 45;
 const int pin_servo_h = 44;
 
-const uint8_t pins_qtr1[] = {327, 268, 232, 225, 225, 222, 225, 223};
-const uint8_t pins_qtr2[] = {141, 128, 141, 92, 141, 148, 148, 174};
+const uint8_t pins_qtr1[] = {23, 25, 27, 29, 31, 33, 35, 37};
+const uint8_t pins_qtr2[] = {22, 24, 26, 28, 30, 32, 34, 36};
 
 const byte pin_sharpC = A9;
 const byte pin_sharpL = A10;
@@ -80,8 +80,8 @@ Servo servoH;
 // angle variables define servo range of motion
 int servoW_down_angle = 130;
 int servoW_up_angle = 136;
-int servoC_open_angle = 175;
-int servoC_shut_angle = 125;
+int servoC_open_angle = 170;
+int servoC_shut_angle = 120;
 int servoH_down_angle = 0;
 int servoH_mid_angle = 30;
 int servoH_up_angle = 60;
@@ -131,12 +131,12 @@ void setup() {
   color_off();
 
   // *Write beginning servo angles*
-  servoW.attach(pin_servo_w);
-  servoC.attach(pin_servo_c);
-  servoH.attach(pin_servo_h);
-  servoW.write(servoW_up_angle);
-  servoC.write(servoC_open_angle);
-  servoH.write(servoH_down_angle);
+  // servoW.attach(pin_servo_w);
+  // servoC.attach(pin_servo_c);
+  // servoH.attach(pin_servo_h);
+  // servoW.write(servoW_up_angle);
+  // servoC.write(servoC_open_angle);
+  // servoH.write(servoH_mid_angle);
 
   // *Initialize sensors*
   qtr1.setTypeRC();
@@ -910,16 +910,31 @@ String compare_frequency() {
   int threshold = 400; // play with this
 
   int filt = 0;
-  int filt_max[num_reads] = {};
-  int filt_min[num_reads] = {};
+  int filt_max = 0;
+  int filt_min = 0;
 
   int unfilt = 0;
-  int unfilt_max[num_reads] = {};
-  int unfilt_min[num_reads] = {};
+  int unfilt_max = 0;
+  int unfilt_min = 0;
 
-  int ave_filt_amp = 0;
-  int ave_unfilt_amp = 0;
+  float time = millis();
+  for (int i = 0; i < 200; i++) {
+    filt = analogRead(pin_freq_filt);
+    unfilt = analogRead(pin_freq_unfilt);
+    debug(millis()-time); debug('\t'); debug(filt); debug("\t"); debugln(unfilt);
+    filt_max = (filt > filt_max) ? filt : filt_max;
+    filt_min = (filt < filt_min) ? filt : filt_min;
+    unfilt_max = (unfilt > unfilt_max) ? unfilt : unfilt_max;
+    unfilt_min = (unfilt < unfilt_min) ? unfilt : unfilt_min;
+  }
+  int sec = 1 / ((millis()-time) / 1000.0);
+  int sample_rate = sec * 200;
 
+  debug("filt amp diff: "); debugln(filt_max - filt_min);
+  debug("unfilt amp diff: "); debugln(unfilt_max - unfilt_min);
+  debug("sample rate: "); debug(sample_rate); debugln(" Hz");
+
+/*
   for (int i = 0; i < num_reads; i++) {
 
     t = millis();
@@ -956,6 +971,7 @@ String compare_frequency() {
     // debug(diffs[i]); debug('\t');
   }
   // debugln();
+*/
 
   // return direction to turn
   return "cw";
