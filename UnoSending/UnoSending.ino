@@ -94,7 +94,7 @@ void send_color() {
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  blue = blue/num_reads;
+  blue = blue/num_reads - 60;
 
   // determine color
   if (red >= green && red >= blue) {
@@ -108,6 +108,13 @@ void send_color() {
   }
 
   // print to mega
-  mySerial.print("color: ");
-  mySerial.println(color);
+//  mySerial.print("color: ");
+//  mySerial.println(color);
+   Serial.print(red);
+   Serial.print("\t");
+   Serial.print(green);
+   Serial.print("\t");
+   Serial.print(blue);
+   Serial.print("\tColor:\t");
+   Serial.println(color);
 }
