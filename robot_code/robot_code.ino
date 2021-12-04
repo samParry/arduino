@@ -33,8 +33,8 @@ const int pin_servo_w = 46;
 const int pin_servo_c = 45;
 const int pin_servo_h = 44;
 
-const uint8_t pins_qtr1[] = {23, 25, 27, 29, 31, 33, 35, 37};
-const uint8_t pins_qtr2[] = {22, 24, 26, 28, 30, 32, 34, 36};
+const uint8_t pins_qtr1[] = {22, 24, 26, 28, 30, 32, 34, 36};
+const uint8_t pins_qtr2[] = {23, 25, 27, 29, 31, 33, 35, 37};
 
 const byte pin_sharpC = A9;
 const byte pin_sharpL = A10;
@@ -60,8 +60,8 @@ const int pin_encoder_m2b = 21;
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
-int16_t qtr1_biases[] = {362, 285, 252, 243, 243, 228, 240, 219};
-int16_t qtr2_biases[] = {185, 117, 98, 81, 90, 120, 170, 286};
+int16_t qtr1_biases[] = {332, 273, 246, 225, 228, 223, 225, 223};
+int16_t qtr2_biases[] = {137, 137, 137, 94, 137, 186, 163, 189};
 int16_t qtr1_vals[8];
 int16_t qtr2_vals[8];
 
@@ -102,14 +102,13 @@ double radians_traveled = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "";
-bool test_state = true;
+String state = "enter_hub";
+bool test_state = false;
 bool going_forward = true;
 char bounty_color = 'r';
 char opposite_color;
 String turn_dir;
 String uno_message;
-String decision = "";
 
 // *Time Variable*
 float t;
@@ -131,12 +130,12 @@ void setup() {
   color_off();
 
   // *Write beginning servo angles*
-  // servoW.attach(pin_servo_w);
-  // servoC.attach(pin_servo_c);
-  // servoH.attach(pin_servo_h);
-  // servoW.write(servoW_up_angle);
-  // servoC.write(servoC_open_angle);
-  // servoH.write(servoH_mid_angle);
+   servoW.attach(pin_servo_w);
+//   servoC.attach(pin_servo_c);
+   servoH.attach(pin_servo_h);
+   servoW.write(servoW_up_angle);
+//   servoC.write(servoC_open_angle);
+   servoH.write(servoH_mid_angle);
 
   // *Initialize sensors*
   qtr1.setTypeRC();
@@ -153,13 +152,13 @@ void setup() {
   mshield.enableDrivers();
   mshield.flipM2(true);
 
-  // *Initialize communicatio
+  // *Initialize communication
   Serial.begin(9600);
   Serial2.begin(9600);
   debugln("Mega Ready");
 
   // *Final commands*
-  // calibrate_qtrs();
+//   calibrate_qtrs();
   last_time = millis();
 }
 
@@ -280,7 +279,6 @@ void test_mode() {
   debugln("qtr        Calibrate QTR sensors");
   debugln("qtrbwf     Scan for black/white with QTRs (forward)");
   debugln("qtrbwb     Scan for black/white with QTRs (backward)");
-  debugln("perm       Ask for permission");
   debugln("tcw        Turn clockwise");
   debugln("tccw       Turn counter-clockwise");
   debugln("wb         Follow wall (backward)");
@@ -433,7 +431,7 @@ void test_mode() {
     }
     else if (state == "qtrbwf") {
       going_forward = true;
-      char color = qtr_black_or_white();
+      char color = qtr_black_or_white(true);
       
       // print readings
       debugln("qtr1 values");
@@ -445,7 +443,7 @@ void test_mode() {
     }
     else if (state == "qtrbwb") {
       going_forward = false;
-      char color = qtr_black_or_white();
+      char color = qtr_black_or_white(true);
       
       // print readings
       debugln("qtr2 values");
@@ -454,11 +452,6 @@ void test_mode() {
         debug('\t');
       }
       debugln(color);      
-    }
-
-    // Ask for permission
-    else if (state == "perm") {
-      
     }
 
     // Turn 90 degrees
@@ -519,7 +512,7 @@ void print_qtr(int num) {
     debugln();  
   }
   else if (num == 2) {
-    debugln("qtr1 values");
+    debugln("qtr2 values");
     for (int i = 0; i < 8; i++) {
       debug(qtr2_vals[i]);
       debug('\t');
@@ -537,26 +530,32 @@ void start() {
   debugln("Starting");
   going_forward = false;
   t = millis();
-  while (millis() - t <= 4000) {
-    mshield.setM1Speed(-base_speed);
-    mshield.setM2Speed(-base_speed);
+  while (millis() - t <= 3000) {
+    follow_line();
   }
   state = "ahub"; debugln("Approaching Hub");
-  
 }
 
 void approach_hub() {
   // follow line until black tape
-  char color = qtr_black_or_white();
-  debugln(color);
-  // print_qtr(2);
+  char color = qtr_black_or_white(false);
+//  debugln(color);
+//  print_qtr(2);
   if (color == 'n') {
     follow_line();
   }
   else {
     stop_motors();
+
+    // scoot back a little
+    t = millis();
+    while (millis() - t < 100) {
+      mshield.setM1Speed(base_speed);
+      mshield.setM2Speed(base_speed);
+    }
+    mshield.setM1Speed(0);
+    mshield.setM2Speed(0);
     state = "turn_hub1"; debugln("Turning Hub");
-    
   }
 }
 
@@ -572,16 +571,15 @@ void turn_hub_from_entrance() {
   correct_hub_offset("cw");
   if (bounty_color == 'g') {
     state = "enter_canyon"; debugln("Entering Canyon");
-    
   }
   else {
     state = "enter_hub"; debugln("Entering Hub");
-    
   }
 }
 
 // TODO: tweak straight line distance
 void enter_hub() {
+  going_forward = false;
   int drive_dist = 180; // hub is 18 cm in diamter
   
   if (dist_traveled < drive_dist) {
@@ -590,8 +588,8 @@ void enter_hub() {
   else {
     stop_motors();
   }
-  state = "turn_hub2"; debugln("Turning Hub");
-  
+//  state = "turn_hub2"; debugln("Turning Hub");
+  state = "";
 }
 
 // TODO: test
@@ -615,11 +613,9 @@ void turn_hub_from_hub() {
     // update state
     if (bounty_color == 'r') {
       state = "enter_cave"; debugln("Entering Cave");
-      
     }
     else if (bounty_color == 'b') {
       state = "acompound"; debugln("Approaching Gate");
-      
     }
   }
 }
@@ -639,14 +635,13 @@ void enter_canyon() {
   }
 
   // drive till past LED array
-  char color = qtr_black_or_white();
+  char color = qtr_black_or_white(false);
   if (color == 'n') {
     follow_line();
   }
   else {
     stop_motors();
     state = "face_block"; debugln("Turning to face bounty");
-    
   }
 }
 
@@ -678,7 +673,7 @@ void get_block_canyon() {
 void back_to_center() {
 
   // drive till past LED array
-  char color = qtr_black_or_white();
+  char color = qtr_black_or_white(false);
   if (color == 'n') {
     follow_line();
   }
@@ -693,7 +688,6 @@ void back_to_center() {
       turn_cw();
     }
     state = "go_home"; debugln("Returning Home");
-    
   }
 }
 
@@ -751,7 +745,7 @@ void get_block_cave() {
 // TODO: test transition between wall and line following
 void traverse_cave_backward() {
   // get back to cave
-  char color = qtr_black_or_white();
+  char color = qtr_black_or_white(false);
   if (color == 'n') {
     follow_line();
   }
@@ -979,14 +973,17 @@ String compare_frequency() {
 
 // TODO: rotate hub a little more to account for offset sensors
 void correct_hub_offset(String dir) {
-  
+  t = millis();
   if (dir == "cw") {
-    instrument_motor_cw();
+    while(millis() - t < 100) {
+     instrument_motor_cw(); 
+    }
   }
   else if (dir == "ccw") {
-    instrument_motor_ccw();
+    while(millis() - t < 100) {
+     instrument_motor_ccw(); 
+    }
   }
-  delay(1000);   // experiment with timing
   stop_motors();
 }
 
@@ -1083,7 +1080,7 @@ void drive_straight(double drive_dist) {
   theta_traveled_m1_old = theta_traveled_m1;
   theta_traveled_m2_old = theta_traveled_m2;
   last_time = current_time / 1000.0;
-  // debug("dist traveled: "); debug(dist_traveled); debugln(" mm");
+  debug("dist traveled: "); debug(dist_traveled); debugln(" mm");
 }
 
 void drive_circle(double desired_radius, double desired_theta) {
@@ -1278,7 +1275,7 @@ void instrument_motor_cw() {
   digitalWrite(pin_motor_w2, HIGH);
 }
 
-char qtr_black_or_white() {
+char qtr_black_or_white(bool read) {
   // returns 'w' for white
   // returns 'b' for black
   // returns 'n' for no
@@ -1289,11 +1286,13 @@ char qtr_black_or_white() {
   bool white = true;
 
   // read qtr
-  if (going_forward) {
-    qtr1.read(qtr1_vals);
-  }
-  else {
-    qtr2.read(qtr2_vals);
+  if (read) {
+    if (going_forward) {
+      qtr1.read(qtr1_vals);
+    }
+    else {
+      qtr2.read(qtr2_vals);
+    }
   }
 
   // check middle 4 sensors
@@ -1460,11 +1459,13 @@ void read_mega() {
 
 bool read_hall() {
   int baseline = 555; // approximate
-  int threshold = 400;
+  int threshold = 200;
   int reading = analogRead(pin_hall);
+//  debugln(reading);
   int diff = abs(reading - baseline); // abs diff
   // debug("reading: "); debug(reading); debug("\tdiff: "); debugln(diff);
   if (diff > threshold) {
+    debugln(reading);
     return true;
   }
   else {
