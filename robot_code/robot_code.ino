@@ -101,8 +101,8 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "comp_to_hub";
-bool test_state = true;
+String state = "agate";
+bool test_state = false;
 bool going_forward = false;
 char bounty_color = 'b';
 char opposite_color = 'r';
@@ -237,17 +237,15 @@ void loop() {
   else if (state == "comp_to_hub") {
     compound_to_hub();
   }
-  else if (state == "comp_on_hub") {
+  else if (state == "comp_ent_hub") {
     compound_enter_hub();
   }
 
 
   // *** RETURN ***
-  else if (state == "reenter") {
-    reenter_hub();
-  }
   else if (state == "hub_back") {
     turn_hub_back();
+    t = millis(); // set time for go_home()
   }
   else if (state == "go_home") {
     go_home();
@@ -303,7 +301,7 @@ void test_mode() {
     // Color sensor
     if (state == "c") {
       char color = read_color();
-     // delay(1000);
+      delay(200);
     }
 
     // Claw
@@ -602,13 +600,13 @@ void turn_hub_from_hub() {
     correct_hub_offset("h");
     servoW.write(servoW_up_angle);
 
-//    // update state
-//    if (bounty_color == 'r') {
-//      state = "enter_cave"; debugln("Entering Cave");
-//    }
-//    else if (bounty_color == 'b') {
-//      state = "agate"; debugln("Approaching Gate");
-//    }
+   // update state
+   if (bounty_color == 'r') {
+     state = "enter_cave"; debugln("Entering Cave");
+   }
+   else if (bounty_color == 'b') {
+     state = "agate"; debugln("Approaching Gate");
+   }
     state = "";
   }
 }
@@ -790,20 +788,19 @@ void compound_to_hub() {
   char color = qtr_black_or_white(2);
   if (color == 'w') {
     stop_motors();
-    state = "comp_on_hub"; debugln("Back at Hub");
+    state = "comp_ent_hub"; debugln("Back at Hub");
   }
 }
 
 void compound_enter_hub() {
   going_forward = false;
   double drive_dist = 480; // hub is 18" (457mm) in diameter
-  debugln(dist_traveled);
   if (dist_traveled < drive_dist) {
     drive_straight(drive_dist);
   }
   else {
     stop_motors();
-    state = ""; debugln("Back on Hub");
+    state = "hub_back"; debugln("Back on Hub");
   }
 }
 
@@ -811,20 +808,45 @@ void compound_enter_hub() {
  ** State Functions: Return **
  *****************************/
 
-// TODO: write all these
-void reenter_hub() {
-
-  state = "hub_back"; debugln("Alligning Hub");
-}
-
+// TODO: test
 void turn_hub_back() {
+  // drop/rotate wheel arm
+  servoW.write(servoW_down_angle);
+  if (bounty_color == 'r') {
+    instrument_motor_cw();
+  }
+  else if (bounty_color == 'b') {
+    instrument_motor_ccw();
+  }
 
-  state = "go_home"; debugln("Returning Home");
+  // stop rotation when black tape is found
+  char color = read_color();
+  if (color == 'k') {
+    correct_hub_offset("cw");
+    servoW.write(servoW_up_angle);
+    state = "go_home"; debugln("Returning Home");
+  }
 }
 
 void go_home() {
   // The robot should have a line all the way to the start
-  follow_line();
+  if (millis() - t <= 3000) {
+    follow_line();
+  }
+  else {
+    if (qtr_black_or_white(2) == 'n') {
+      follow_line();
+    }
+    else {
+      reset_encoder_tracking();
+      while (dist_traveled < 300) {
+        drive_straight(300);
+      }
+      stop_motors();
+      servoH.write(servoH_up_angle);
+      state = ""; debugln("Bounty Confirmed");
+    }
+  }
 }
 
 /********************
@@ -926,12 +948,12 @@ String compare_frequency() {
 void correct_hub_offset(String dir) {
   t = millis();
   if (dir == "cw") {
-    while(millis() - t < 2000) {
+    while(millis() - t < 1000) {
       instrument_motor_cw(); 
     }
   }
   else if (dir == "ccw") {
-    while(millis() - t < 2000) {
+    while(millis() - t < 1000) {
       instrument_motor_ccw(); 
     }
   }
@@ -952,7 +974,7 @@ char determine_color(int r, int g, int b) {
   // determine color
   char color;
   int w_threshold = 700;
-  int k_threshold = 200;
+  int k_threshold = 260;
   if (r >= w_threshold && g >= w_threshold && b >= w_threshold) {
     color = 'w';
   }
@@ -968,13 +990,17 @@ char determine_color(int r, int g, int b) {
   else if (b >= r && b >= g) {
     color = 'b';
   }
-//   debug(r);
-//   debug("\t");
-//   debug(g);
-//   debug("\t");
-//   debug(b);
-//   debug("\tColor:\t");
-//   debugln(color);
+
+  if (test_state == true) {
+  // if (true == true) {
+    debug(r);
+    debug("\t");
+    debug(g);
+    debug("\t");
+    debug(b);
+    debug("\tColor:\t");
+    debugln(color);
+  }
   return color;
 }
 
@@ -1020,7 +1046,8 @@ void drive_straight(double drive_dist) {
   //Solve for voltages
   m1_speed = base_speed + Kp * (theta_d1 - theta_traveled_m1);
   m2_speed = base_speed + Kp * (theta_d2 - theta_traveled_m2);
-  
+  debug(m1_speed); debug('\t'); debugln(m2_speed);
+
   // set Motor voltages
   if (going_forward) {
     mshield.setM1Speed(m1_speed);
@@ -1036,7 +1063,7 @@ void drive_straight(double drive_dist) {
   theta_traveled_m1_old = theta_traveled_m1;
   theta_traveled_m2_old = theta_traveled_m2;
   last_time = current_time / 1000.0;
-//  debug("dist trav: "); debug(dist_traveled); debugln(" mm");
+  // debug("dist trav: "); debug(dist_traveled); debugln(" mm");
 }
 
 // TODO: Make it stop if it looses the line
@@ -1383,9 +1410,9 @@ void reset_encoder_tracking() {
 
 bool sense_gate(int stop_dist) {
   int dist = sharpF.getDist();
-//  debug("Distance: ");
-  // debugln(dist);
-//  debugln(" mm");
+  //debug("Distance: ");
+  //debugln(dist);
+  //debugln(" mm");
   if (dist <= stop_dist) {
     // double check reading to avoid false positives from noise
     if (sharpF.getDist() <= stop_dist) {
@@ -1400,7 +1427,7 @@ void stop_motors() {
   mshield.setM2Speed(0);
   digitalWrite(pin_motor_w1, LOW);
   digitalWrite(pin_motor_w2, LOW);
-  if (dist_traveled != 0) {
+  if (EncoderM1.read() != 0) {
     debugln("Encoders Reset");
     reset_encoder_tracking();
   }
