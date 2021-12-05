@@ -102,7 +102,7 @@ double dist_traveled = 0;
 
 // *State Variables*
 String state = "comp_to_hub";
-bool test_state = false;
+bool test_state = true;
 bool going_forward = false;
 char bounty_color = 'b';
 char opposite_color = 'r';
@@ -270,7 +270,6 @@ void test_mode() {
   debugln("c          Color sensor");
   debugln("co         Claw open");
   debugln("cs         Claw shut");
-  debugln("ec         Drive circle (encoder)");
   debugln("el         Straight line (encoder)");
   debugln("f          Compare frequencies");
   debugln("h          Hall effect Sensor");
@@ -318,23 +317,6 @@ void test_mode() {
     }
 
     // Encoders
-    else if (state == "ec") {
-      // DEPRECATED
-
-      //Robot Measurements
-      double wheel_radius = 35; //mm
-      double desired_radius = 400;
-      double desired_theta = 2 * PI;
-      double required_radians = (desired_radius * desired_theta) / wheel_radius;
-
-      if (radians_traveled <= required_radians) {
-        drive_circle(desired_radius, desired_theta);
-      }
-      else if (radians_traveled >= required_radians) {
-        stop_motors();
-        state = "";
-      }
-    }
     else if (state == "el") {
       double drive_dist = 100; // mm
       if (dist_traveled < drive_dist) {
