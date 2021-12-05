@@ -1057,62 +1057,6 @@ void drive_straight(double drive_dist) {
 //  debug("dist trav: "); debug(dist_traveled); debugln(" mm");
 }
 
-void drive_circle(double desired_radius, double desired_theta) {
-  // DEPRECATED
-
-  //Robot Measurements
-  double wheel_radius = 35; //mm
-  double distance_between_wheels = 240; //mm
-
-  //encoder variables
-  double GearRatio = 100;
-  double countsPerRev = 64;
-  double RevsShaft2Rad = 2 * PI;
-  double required_radians = RevsShaft2Rad * ((desired_radius * desired_theta)/ (RevsShaft2Rad*wheel_radius));
-
-  //Endoder variables circle
-  double velocity_ratio = (desired_radius + distance_between_wheels)/desired_radius;
-  double Kp = 50;
-  
-  //Apply PID scaling
-  Kp *= pid_scaling;
-  
-  //Time based variables
-  current_time = millis() /1000.0;
-  delta_time = current_time - last_time;
- 
-  //read the encoders
-  double count_m1 = EncoderM1.read();
-  double count_m2 = -EncoderM2.read();
-
-  //solve for radians traveled
-  double theta_traveled_m1 = (count_m1 * RevsShaft2Rad) * (1 / (countsPerRev * GearRatio));
-  double theta_traveled_m2 = (count_m2 *  RevsShaft2Rad) * (1 / (countsPerRev * GearRatio));
-
-  //solve for current velocities
-  double velocity_m1 = (theta_traveled_m1 - theta_traveled_m1_old)/delta_time;
-  double velocity_m2 = (theta_traveled_m2 - theta_traveled_m2_old)/delta_time;
-  double velocity_average = (velocity_m1 + velocity_m2)/2;
-
-  //Solve for the next desired radian count
-  double theta_d1 = theta_traveled_m1 + velocity_average * delta_time;
-  double theta_d2 = theta_traveled_m2 + velocity_average * delta_time;
-
-  //Solve for voltages
-  m1_speed = (base_speed + Kp * (theta_d1 - theta_traveled_m1));
-  m2_speed = velocity_ratio * (base_speed + Kp * (theta_d2 - theta_traveled_m2));
-
-  //Set voltages to motors
-  mshield.setM1Speed(m1_speed);
-  mshield.setM2Speed(m2_speed);
-
-  //record global variables
-  radians_traveled = (theta_traveled_m1 + theta_traveled_m2) / 2;
-  theta_traveled_m1_old = theta_traveled_m1;
-  theta_traveled_m2_old = theta_traveled_m2;
-  last_time = current_time;
-}
-
 // TODO: Make it stop if it looses the line
 // TODO: Get it to recognize white or black
 void follow_line() {
