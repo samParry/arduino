@@ -98,13 +98,12 @@ Encoder EncoderM1(pin_encoder_m1a , pin_encoder_m1b);
 Encoder EncoderM2(pin_encoder_m2a,  pin_encoder_m2b);
 double theta_traveled_m1_old = 0;
 double theta_traveled_m2_old = 0;
-double radians_traveled = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "block_compound";
+String state = "comp_to_hub";
 bool test_state = false;
-bool going_forward = true;
+bool going_forward = false;
 char bounty_color = 'b';
 char opposite_color = 'r';
 String turn_dir;
@@ -226,7 +225,7 @@ void loop() {
 
 
   // *** COMPOUND ***
-  else if (state == "acompound") {
+  else if (state == "agate") {
     approach_gate();
   }
   else if (state == "gate") {
@@ -234,6 +233,12 @@ void loop() {
   }
   else if (state == "block_compound") {
     get_block_compound();
+  }
+  else if (state == "comp_to_hub") {
+    compound_to_hub();
+  }
+  else if (state == "comp_on_hub") {
+    compound_enter_hub();
   }
 
 
@@ -299,7 +304,7 @@ void test_mode() {
     // Color sensor
     if (state == "c") {
       char color = read_color();
-//      delay(1000);
+     // delay(1000);
     }
 
     // Claw
@@ -331,11 +336,10 @@ void test_mode() {
       }
     }
     else if (state == "el") {
-
       double drive_dist = 100; // mm
-      
       if (dist_traveled < drive_dist) {
         drive_straight(drive_dist);
+        debugln(dist_traveled);
       }
       else {
         stop_motors();
@@ -512,7 +516,8 @@ void print_qtr(int num) {
       debug(qtr1_vals[i]);
       debug('\t');
     }
-    debugln();  
+    debug(qtr_black_or_white(1));
+    debugln();
   }
   else if (num == 2) {
     debugln("qtr2 values");
@@ -520,7 +525,8 @@ void print_qtr(int num) {
       debug(qtr2_vals[i]);
       debug('\t');
     }
-    debugln(); 
+    debug(qtr_black_or_white(2));
+    debugln();
   }
 }
 
@@ -544,8 +550,8 @@ void approach_hub() {
   going_forward = false;
   // follow line until black tape
   char color = qtr_black_or_white(false);
-//  debugln(color);
-  print_qtr(2);
+  //debugln(color);
+  // print_qtr(2);
   if (color == 'n') {
     follow_line();
   }
@@ -609,7 +615,7 @@ void turn_hub_from_hub() {
   }
 
   // stop rotation when color is found
-//  char color = read_color();
+  // char color = read_color();
   if (read_color() == opposite_color) {
     correct_hub_offset("h");
     servoW.write(servoW_up_angle);
@@ -619,7 +625,7 @@ void turn_hub_from_hub() {
 //      state = "enter_cave"; debugln("Entering Cave");
 //    }
 //    else if (bounty_color == 'b') {
-//      state = "acompound"; debugln("Approaching Gate");
+//      state = "agate"; debugln("Approaching Gate");
 //    }
     state = "";
   }
@@ -769,14 +775,13 @@ void traverse_cave_backward() {
  ** State Functions: Compound **
  *******************************/
 
-// TODO
 void approach_gate() {
   going_forward = true;
   // drop arm and drive to gate
   servoH.write(servoH_down_angle);
   delay(50);
   follow_line();
-  if (sense_gate(210)) {
+  if (sense_gate(200)) {
     stop_motors();
     state = "gate"; debugln("Lifting Gate");
   }
@@ -790,33 +795,34 @@ void raise_gate() {
   servoH.write(servoH_mid_angle);
   delay(500);
   state = "block_compound"; debugln("Collecting Bounty");
-//  // If gate isn't up, try again
-//  if (sense_gate(220)) {
-//    debugln("Failed to lift gate... Trying again");
-//
-//    // reverse and approach gate again
-//    going_forward = false;
-//    t = millis();
-//    while (millis() - t <= 2000) {
-//      follow_line();
-//    }
-//    going_forward = true;
-//    approach_gate();
-//    servoH.write(servoH_up_angle);
-//    delay(1000);
-//    servoH.write(servoH_mid_angle);
-//    delay(50);
-//  }
-//  else {
-//    state = "block_compound"; debugln("Collecting Bounty");
-//    state = "";
-//  }
 }
 
-// TODO: figure out how to stop line following
 void get_block_compound() {
   get_block();
-  state = "";
+  state = "comp_to_hub"; debugln("Returning to Hub");
+}
+
+void compound_to_hub() {
+  going_forward = false;
+  follow_line();
+  char color = qtr_black_or_white(2);
+  if (color == 'w') {
+    stop_motors();
+    state = "comp_on_hub"; debugln("Back at Hub");
+  }
+}
+
+void compound_enter_hub() {
+  going_forward = false;
+  double drive_dist = 480; // hub is 18" (457mm) in diameter
+  debugln(dist_traveled);
+  if (dist_traveled < drive_dist) {
+    drive_straight(drive_dist);
+  }
+  else {
+    stop_motors();
+    state = ""; debugln("Back on Hub");
+  }
 }
 
 /*****************************
@@ -827,7 +833,6 @@ void get_block_compound() {
 void reenter_hub() {
 
   state = "hub_back"; debugln("Alligning Hub");
-  
 }
 
 void turn_hub_back() {
@@ -843,11 +848,6 @@ void go_home() {
 /********************
  ** Core Functions **
  ********************/
-
-// TODO
-bool at_led() {
-  return false;
-}
 
 void calibrate_qtrs() {
   float sums1[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -936,45 +936,6 @@ String compare_frequency() {
   debug("unfilt amp diff: "); debugln(unfilt_max - unfilt_min);
   debug("sample rate: "); debug(sample_rate); debugln(" Hz");
 
-/*
-  for (int i = 0; i < num_reads; i++) {
-
-    t = millis();
-    while (millis() - t < 100) {
-      filt = analogRead(pin_freq_filt);
-      unfilt = analogRead(pin_freq_unfilt);
-
-      // set max and min readings
-      filt_max[i] = (filt > filt_max[i]) ? filt : filt_max[i];
-      filt_min[i] = (filt < filt_min[i]) ? filt : filt_min[i];
-      unfilt_max[i] = (unfilt > unfilt_max[i]) ? unfilt : unfilt_max[i];
-      unfilt_min[i] = (unfilt < unfilt_min[i]) ? unfilt : unfilt_min[i];
-    }
-
-    // approach 1: average amplitude
-    ave_filt_amp += filt_max[i] - filt_min[i];
-    ave_unfilt_amp += unfilt_max[i] - unfilt_min[i];
-  }
-
-  ave_filt_amp /= num_reads;
-  ave_unfilt_amp /= num_reads;
-  // debugln("Approach 1");
-  // debug("ave filt amp: "); debug(ave_filt_amp);
-  // debug("\tave unfilt amp: "); debugln(ave_unfilt_amp);  
-
-
-  // approach 2: decision by majority
-  int diffs[num_reads];
-
-  // {(filt_max - filt_min) - (unfilt_max - unfilt_min)};
-  // debugln("Approach 2");
-  for (int i = 0; i < num_reads; i++) {
-    diffs[i] = (unfilt_max[i] - unfilt_min[i]) - (filt_max[i] - filt_min[i]);
-    // debug(diffs[i]); debug('\t');
-  }
-  // debugln();
-*/
-
   // return direction to turn
   return "cw";
 }
@@ -1044,9 +1005,6 @@ void drive_straight(double drive_dist) {
   double RevsShaft2Rad = 2 * PI;
   double required_radians = drive_dist / wheel_radius;
   double Kp = 1.5;
-
-  // apply PID scaling
-  Kp *= pid_scaling;
   
   // time based variables
   current_time = millis();
@@ -1252,23 +1210,19 @@ void get_block() {
     follow_line();
   }
   stop_motors();
-
-  // try to move forward 2cm
-  while (dist_traveled < 20) {
-    drive_straight(20);
+  
+  // move forward 2cm
+  t = millis();
+  while (millis() - t < 100) {
+    mshield.setM1Speed(base_speed);
+    mshield.setM2Speed(base_speed);
   }
   stop_motors();
+  
   claw_shut();
+  delay(250); // wait for claw to shut
   going_forward = false;
   debugln("Bounty Secured");
-
-  // temporary termination code
-  t = millis();
-  while (millis() - t < 1000) {
-    follow_line();
-  }
-  stop_motors();
-  claw_open();
 }
 
 void identify_opposite_color() {
@@ -1494,7 +1448,6 @@ bool read_hall() {
 }
 
 void reset_encoder_tracking() {
-  radians_traveled = 0;
   dist_traveled = 0;
   theta_traveled_m1_old = 0;
   theta_traveled_m2_old = 0;
@@ -1505,11 +1458,11 @@ void reset_encoder_tracking() {
 bool sense_gate(int stop_dist) {
   int dist = sharpF.getDist();
 //  debug("Distance: ");
-  debugln(dist);
+  // debugln(dist);
 //  debugln(" mm");
   if (dist <= stop_dist) {
     // double check reading to avoid false positives from noise
-    if (sharpF.getDist()) {
+    if (sharpF.getDist() <= stop_dist) {
       return true; 
     }
   }
