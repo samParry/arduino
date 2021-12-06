@@ -80,9 +80,9 @@ Servo servoH;
 // angle variables define servo range of motion
 int servoW_down_angle = 130;
 int servoW_up_angle = 136;
-int servoC_open_angle = 170;
-int servoC_term_angle = 140;
-int servoC_shut_angle = 130;
+int servoC_open_angle = 165;
+int servoC_term_angle = 133;
+int servoC_shut_angle = 128;
 int servoH_down_angle = 0;
 int servoH_mid_angle = 30;
 int servoH_up_angle = 65;
@@ -102,12 +102,12 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "terminate";
+String state = "face_block";
 bool test_state = false;
 bool going_forward = false;
 char bounty_color = 'b';
 char opposite_color = 'r';
-String turn_dir;
+String turn_dir = "cw";
 String uno_message;
 
 // *Time Variable*
@@ -207,6 +207,10 @@ void loop() {
   }
   else if (state == "to_center") {
     back_to_center();
+    t = millis(); // needed for go_home_canyon
+  }
+  else if (state == "go_home_canyon") {
+    go_home_canyon();
   }
 
 
@@ -272,6 +276,7 @@ void test_mode() {
   debugln("at         At LED?");
   debugln("c          Color sensor");
   debugln("co         Claw open");
+  debugln("cm         Claw mid angle");
   debugln("cs         Claw shut");
   debugln("el         Straight line (encoder)");
   debugln("f          Compare frequencies");
@@ -320,6 +325,10 @@ void test_mode() {
     // Claw
     else if (state == "co") {
       claw_open();
+      state = "";
+    }
+    else if (state == "cm") {
+      servoC.write(servoC_term_angle);
       state = "";
     }
     else if (state == "cs") {
@@ -535,7 +544,7 @@ void print_qtr(int num) {
 /****************************
  ** State Functions: Start **
  ****************************/
-// works
+
 void start() {
   // get over the line with a timed motor burn
   debugln("Starting");
@@ -547,7 +556,6 @@ void start() {
   state = "ahub"; debugln("Approaching Hub");
 }
 
-// works
 void approach_hub() {
   going_forward = false;
   // follow line until black tape
@@ -591,7 +599,6 @@ void turn_hub_from_entrance() {
   }
 }
 
-// works
 void enter_hub() {
   going_forward = false;
   int drive_dist = 457; // hub is 18" (457mm) in diamter
@@ -604,7 +611,6 @@ void enter_hub() {
   }
 }
 
-// works
 void turn_hub_from_hub() {
 
   // drop/rotate wheel arm
@@ -676,63 +682,84 @@ void face_bounty() {
 }
 
 void terminate() {
-  going_forward = true;
-  servoC.write(servoC_term_angle);
-  follow_line();
-  int dist = sharpC.getDist();
-  debugln(dist);
-  if (dist <= 70) {
-    reset_encoder_tracking();
-    while (dist_traveled < 70) {
-      drive_straight(70);
-    }    
-    stop_motors();
-    state = "block_canyon"; debugln("Collecting Bounty");
-  }
-}
+  get_block();
 
-void get_block_canyon() {
-  // back up and turn around
+  // release block to terminate
   t = millis();
-  while (millis() - t < 500) {
+  while (millis() - t < 300) {
     mshield.setM1Speed(-base_speed);
     mshield.setM2Speed(-base_speed);
   }
   mshield.setM1Speed(0);
   mshield.setM2Speed(0);
-  turn_cw();
-  turn_cw();  
-  get_block();
-  // state = "to_center"; debugln("Returning to Center");
-  state = "";
+  claw_open();
+  delay(50);
+
+  // back up to clear block
+  t = millis();
+  while (millis() - t < 750) {
+    mshield.setM1Speed(-base_speed);
+    mshield.setM2Speed(-base_speed);
+  }
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);  
+  state = "block_canyon"; debugln("Collecting Bounty");
 }
 
-// TODO: use encoders for this
-void back_to_center() {
+void get_block_canyon() {
+  // turn around and get bounty
+  turn_cw();
+  turn_cw();
+  get_block();
+  state = "to_center"; debugln("Returning to Center");
+}
 
-  // drive till past LED array
-  char color = qtr_black_or_white(false);
-  if (color == 'n') {
+void back_to_center() {
+  // back up to center point
+  going_forward = false;
+  t = millis();
+  while (millis() - t < 1250) {
+    mshield.setM1Speed(-base_speed);
+    mshield.setM2Speed(-base_speed);
+  }
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);
+
+  // turn opposite direction of original turn
+  // faces the canyon wheel-first
+  if (turn_dir == "cw") {
+    turn_ccw();
+  }
+  else if (turn_dir == "ccw") {
+    turn_cw();
+  }
+  state = "go_home_canyon"; debugln("Returning Home");
+}
+
+void go_home_canyon() {
+  // The robot should have a line all the way to the start
+  base_speed = 400;
+  t = millis();
+  while (millis() - t < 2450) {
+    debugln(millis() - t);
     follow_line();
   }
-  else {
-    stop_motors();
-    
-    // turn opposite direction of initial turn
-    if (turn_dir == "cw") {
-      turn_ccw();
-    }
-    else if (turn_dir == "ccw") {
-      turn_cw();
-    }
-    state = "go_home"; debugln("Returning Home");
-  }
+  stop_motors();
+  base_speed = 200;
+  // if (qtr_black_or_white(2) == 'n') {
+  //   follow_line();
+  // }
+  // else {
+  //   reset_encoder_tracking();
+  //   while (dist_traveled < 300) {
+  //     drive_straight(300);
+  //   }
+  //   stop_motors();
+  //   servoH.write(servoH_up_angle);
+  //   state = ""; debugln("Bounty Confirmed");
+  // }
 }
 
-// TODO: Add this to function chain chain
-void eliminate_decoy() {
-  // use encoder length to back into decoy
-}
 
 /***************************
  ** State Functions: Cave **
@@ -740,14 +767,11 @@ void eliminate_decoy() {
 
 // TODO
 void enter_cave() {
-  int drive_dist = 100; // mm
-  
-  if (dist_traveled < drive_dist) {
-    drive_straight(drive_dist);
+  reset_encoder_tracking();
+  while (dist_traveled < 100) {
+    drive_straight(100);
   }
-  else {
-    stop_motors();
-  }
+  stop_motors();
   state = "trav_cave1"; debugln("Traversing Cave");
 }
 
@@ -771,6 +795,7 @@ void mudhorn() {
   turn_ccw();
   turn_ccw();
   turn_cw();
+  servoH.write(servoH_up_angle);
   state = "block_cave"; debugln("Collecting Bounty");
 }
 
@@ -783,9 +808,11 @@ void get_block_cave() {
 // TODO: test transition between wall and line following
 void traverse_cave_backward() {
   // get back to cave
-  char color = qtr_black_or_white(false);
-  if (color == 'n') {
+  going_forward = false;
+  char color = qtr_black_or_white(true);
+  while (color != 'w') {
     follow_line();
+    color = qtr_black_or_white(false);
   }
 
   int no_wall_val = 170;
@@ -793,8 +820,8 @@ void traverse_cave_backward() {
     follow_wall();
   }
   else {
+    stop_motors();
     state = ""; debugln("TODO: write next function");
-    
   }
 }
 
@@ -855,7 +882,6 @@ void compound_enter_hub() {
  ** State Functions: Return **
  *****************************/
 
-// TODO: test
 void turn_hub_back() {
   // drop/rotate wheel arm
   servoW.write(servoW_down_angle);
@@ -1138,7 +1164,7 @@ void drive_straight(double drive_dist) {
 // TODO: Make it stop if it looses the line
 // TODO: Get it to recognize white or black
 void follow_line() {
-  double Kp = 20, Kd = 40;
+  double Kp = 60, Kd = 60;
   float error_p, error_d, error;
   current_time = millis();
   delta_time = current_time - last_time;
@@ -1228,6 +1254,7 @@ void follow_wall() {
 
 void get_block() {
   going_forward = true;
+  claw_open();
   while (sharpC.getDist() > 20) {
     follow_line();
   }
