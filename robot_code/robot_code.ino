@@ -48,7 +48,7 @@ const int pin_blue = 52;
 const byte pin_hall = A2;
 
 const byte pin_freq_filt = A6;
-const byte pin_freq_unfilt = A7;
+const byte pin_freq_raw = A7;
 
 // blue = PWR
 // green = GND
@@ -60,8 +60,8 @@ const int pin_encoder_m2b = 21;
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
-int16_t qtr1_biases[] = {332, 273, 246, 225, 228, 223, 225, 223};
-int16_t qtr2_biases[] = {137, 137, 137, 94, 137, 186, 163, 189};
+int16_t qtr1_biases[] = {322, 274, 264, 236, 269, 264, 274, 286};
+int16_t qtr2_biases[] = {411, 346, 331, 181, 318, 363, 328, 408};
 int16_t qtr1_vals[8];
 int16_t qtr2_vals[8];
 
@@ -81,7 +81,8 @@ Servo servoH;
 int servoW_down_angle = 130;
 int servoW_up_angle = 136;
 int servoC_open_angle = 170;
-int servoC_shut_angle = 120;
+int servoC_term_angle = 140;
+int servoC_shut_angle = 130;
 int servoH_down_angle = 0;
 int servoH_mid_angle = 30;
 int servoH_up_angle = 65;
@@ -101,7 +102,7 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "agate";
+String state = "terminate";
 bool test_state = false;
 bool going_forward = false;
 char bounty_color = 'b';
@@ -122,8 +123,8 @@ void setup() {
   pinMode(pin_green, OUTPUT);
   pinMode(pin_blue, OUTPUT);
   pinMode(pin_hall, INPUT);
-  pinMode(pin_freq_unfilt, INPUT);
   pinMode(pin_freq_filt, INPUT);
+  pinMode(pin_freq_raw, INPUT);
   pinMode(pin_motor_w1, OUTPUT);
   pinMode(pin_motor_w2, OUTPUT);  
 
@@ -198,6 +199,9 @@ void loop() {
   else if (state == "face_block") {
     face_bounty();
   }
+  else if (state == "terminate") {
+    terminate();
+  }
   else if (state == "block_canyon") {
     get_block_canyon();
   }
@@ -265,6 +269,7 @@ void test_mode() {
   debugln("---------------------------------------------------");
   debugln("Command    Description    m=menu, gf=toggle forward");
   debugln("---------------------------------------------------");
+  debugln("at         At LED?");
   debugln("c          Color sensor");
   debugln("co         Claw open");
   debugln("cs         Claw shut");
@@ -284,6 +289,8 @@ void test_mode() {
   debugln("qtr        Calibrate QTR sensors");
   debugln("qtrbwf     Scan for black/white with QTRs (forward)");
   debugln("qtrbwb     Scan for black/white with QTRs (backward)");
+  debugln("qtrp1      Print forward facing QTRs");
+  debugln("qtrp2      Print rear facing QTRs");
   debugln("tcw        Turn clockwise");
   debugln("tccw       Turn counter-clockwise");
   debugln("wb         Follow wall (backward)");
@@ -298,8 +305,14 @@ void test_mode() {
     read_uno();
     read_mega();
 
+    // At LED
+    if (state == "at") {
+      bool at = at_led();
+      delay(250);
+    }
+
     // Color sensor
-    if (state == "c") {
+    else if (state == "c") {
       char color = read_color();
       delay(200);
     }
@@ -330,7 +343,6 @@ void test_mode() {
     // Compare frequencies
     else if (state == "f") {
       compare_frequency();
-      state = "";
     }
 
     // toggle forward direction
@@ -439,6 +451,16 @@ void test_mode() {
         debug('\t');
       }
       debugln(color);      
+    }
+    else if (state == "qtrp1") {
+      qtr1.read(qtr1_vals);
+      print_qtr(1);
+      delay(250);
+    }
+    else if (state == "qtrp2") {
+      qtr1.read(qtr2_vals);
+      print_qtr(2);
+      delay(250);
     }
 
     // Turn 90 degrees
@@ -620,14 +642,8 @@ void turn_hub_from_hub() {
 void enter_canyon() {
 
   // get through and hub/enter canyon
-  t = millis();
-  if (millis() - t < 5000) {
-    follow_line();
-  }
-
-  // drive till past LED array
-  char color = qtr_black_or_white(false);
-  if (color == 'n') {
+  going_forward = false;
+  if (!at_led()) {
     follow_line();
   }
   else {
@@ -639,6 +655,13 @@ void enter_canyon() {
 // Always turns cw (get compare_freq working)
 void face_bounty() {
 
+  // inch forward a bit
+  reset_encoder_tracking();
+  while (dist_traveled < 40) {
+    drive_straight(40);
+  }
+  stop_motors();
+
   // detect frequency
   turn_dir = compare_frequency();
 
@@ -649,15 +672,39 @@ void face_bounty() {
   else if (turn_dir == "ccw") {
     turn_ccw();
   }
-  
-  state = "block_canyon"; debugln("Collecting Bounty");
+  state = "terminate"; debugln("Terminating Bounty");
 }
 
-// TODO: test
+void terminate() {
+  going_forward = true;
+  servoC.write(servoC_term_angle);
+  follow_line();
+  int dist = sharpC.getDist();
+  debugln(dist);
+  if (dist <= 70) {
+    reset_encoder_tracking();
+    while (dist_traveled < 70) {
+      drive_straight(70);
+    }    
+    stop_motors();
+    state = "block_canyon"; debugln("Collecting Bounty");
+  }
+}
+
 void get_block_canyon() {
+  // back up and turn around
+  t = millis();
+  while (millis() - t < 500) {
+    mshield.setM1Speed(-base_speed);
+    mshield.setM2Speed(-base_speed);
+  }
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);
+  turn_cw();
+  turn_cw();  
   get_block();
-  state = "to_center"; debugln("Returning to Center");
-  
+  // state = "to_center"; debugln("Returning to Center");
+  state = "";
 }
 
 // TODO: use encoders for this
@@ -853,6 +900,20 @@ void go_home() {
  ** Core Functions **
  ********************/
 
+bool at_led() {
+  int raw = analogRead(pin_freq_raw);
+  int filt = analogRead(pin_freq_filt);
+  int diff = raw - filt;
+  debugln(diff);
+  delay(1);
+  if (diff > 20) {
+    return true;
+  }
+  else {
+    return false;
+  }
+}
+
 void calibrate_qtrs() {
   float sums1[] = {0, 0, 0, 0, 0, 0, 0, 0};
   float sums2[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -909,39 +970,47 @@ void color_off() {
 }
 
 String compare_frequency() {
-  // HIGH = Turn left
-  // LOW = Turn right
-  
-  int num_reads = 10;
-  int threshold = 400; // play with this
+  int num_reads = 100;
+  int amp_diff = 0;
 
   int filt = 0;
   int filt_max = 0;
   int filt_min = 0;
+  int filt_amp = 0;
 
-  int unfilt = 0;
-  int unfilt_max = 0;
-  int unfilt_min = 0;
+  int raw = 0;
+  int raw_max = 0;
+  int raw_min = 0;
+  int raw_amp = 0;
 
-  float time = millis();
-  for (int i = 0; i < 200; i++) {
+  // float time = millis();
+  for (int i = 0; i < num_reads; i++) {
+    raw = analogRead(pin_freq_raw);
     filt = analogRead(pin_freq_filt);
-    unfilt = analogRead(pin_freq_unfilt);
-    debug(millis()-time); debug('\t'); debug(filt); debug("\t"); debugln(unfilt);
-    filt_max = (filt > filt_max) ? filt : filt_max;
-    filt_min = (filt < filt_min) ? filt : filt_min;
-    unfilt_max = (unfilt > unfilt_max) ? unfilt : unfilt_max;
-    unfilt_min = (unfilt < unfilt_min) ? unfilt : unfilt_min;
+    // debug(filt); debug("\t"); debugln(raw);
+
+    if (i > 10) {
+      filt_max = (filt > filt_max) ? filt : filt_max;
+      filt_min = (filt < filt_min) ? filt : filt_min;
+      raw_max = (raw > raw_max) ? raw : raw_max;
+      raw_min = (raw < raw_min) ? raw : raw_min;
+    }
   }
-  int sec = 1 / ((millis()-time) / 1000.0);
-  int sample_rate = sec * 200;
+  raw_amp = raw_max - raw_min;
+  filt_amp = filt_max - filt_min;
+  amp_diff = raw_amp - filt_amp;
+  
+  // debug("filt amp diff: "); debugln(filt_max - filt_min);
+  // debug("raw amp diff: "); debugln(raw_amp);
 
-  debug("filt amp diff: "); debugln(filt_max - filt_min);
-  debug("unfilt amp diff: "); debugln(unfilt_max - unfilt_min);
-  debug("sample rate: "); debug(sample_rate); debugln(" Hz");
-
-  // return direction to turn
-  return "cw";
+  // HIGH = Turn left
+  // LOW = Turn right
+  if (amp_diff < 50) {
+    return "cw";
+  }
+  else {
+    return "ccw";
+  }
 }
 
 // TODO: test once hall effect works again
@@ -1046,7 +1115,7 @@ void drive_straight(double drive_dist) {
   //Solve for voltages
   m1_speed = base_speed + Kp * (theta_d1 - theta_traveled_m1);
   m2_speed = base_speed + Kp * (theta_d2 - theta_traveled_m2);
-  debug(m1_speed); debug('\t'); debugln(m2_speed);
+  // debug(m1_speed); debug('\t'); debugln(m2_speed);
 
   // set Motor voltages
   if (going_forward) {
@@ -1069,7 +1138,7 @@ void drive_straight(double drive_dist) {
 // TODO: Make it stop if it looses the line
 // TODO: Get it to recognize white or black
 void follow_line() {
-  double Kp = 20, Kd = 20;
+  double Kp = 20, Kd = 40;
   float error_p, error_d, error;
   current_time = millis();
   delta_time = current_time - last_time;
@@ -1435,7 +1504,7 @@ void stop_motors() {
 
 void turn_cw() {
   t = millis();
-  int turn_time = 2400; // ms
+  int turn_time = 1100; // ms
   while (millis() - t < turn_time) {
     mshield.setM1Speed(-base_speed);
     mshield.setM2Speed(base_speed);
@@ -1445,7 +1514,7 @@ void turn_cw() {
 
 void turn_ccw() {
   t = millis();
-  int turn_time = 2500; // ms
+  int turn_time = 1150; // ms
   while (millis() - t < turn_time) {
     mshield.setM1Speed(base_speed);
     mshield.setM2Speed(-base_speed);
