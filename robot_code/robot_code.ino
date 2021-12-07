@@ -41,11 +41,11 @@ const byte pin_sharpL = A10;
 const byte pin_sharpR = A11;
 const byte pin_sharpF = A12;
 
-const byte pin_color = A5;
+const byte pin_color = A15;
 const int pin_red = 48;
 const int pin_green = 50;
 const int pin_blue = 52;
-const byte pin_hall = A2;
+const byte pin_hall = A8;
 
 const byte pin_freq_filt = A6;
 const byte pin_freq_raw = A7;
@@ -79,7 +79,7 @@ Servo servoH;
 
 // angle variables define servo range of motion
 int servoW_down_angle = 130;
-int servoW_up_angle = 136;
+int servoW_up_angle = 138;
 int servoC_open_angle = 165;
 int servoC_term_angle = 133;
 int servoC_shut_angle = 128;
@@ -102,9 +102,9 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "enter_cave";
+String state = "start";
 bool test_state = false;
-bool going_forward = true;
+bool going_forward = false;
 char bounty_color = 'b';
 char opposite_color = 'r';
 String turn_dir = "cw";
@@ -126,12 +126,13 @@ void setup() {
   pinMode(pin_freq_filt, INPUT);
   pinMode(pin_freq_raw, INPUT);
   pinMode(pin_motor_w1, OUTPUT);
-  pinMode(pin_motor_w2, OUTPUT);  
+  pinMode(pin_motor_w2, OUTPUT);
 
   // kill power to declared pins
-  color_off();
   digitalWrite(pin_motor_w1, LOW);
-  digitalWrite(pin_motor_w2, LOW);  
+  digitalWrite(pin_motor_w2, LOW);
+  stop_motors();
+  color_off();
 
   // *Write beginning servo angles*
    servoW.attach(pin_servo_w);
@@ -269,6 +270,7 @@ void loop() {
  **********************/
 
 void test_mode() {
+  stop_motors();
   debugln("\n           Test Mode");
   debugln("---------------------------------------------------");
   debugln("Command    Description    m=menu, gf=toggle forward");
@@ -291,6 +293,9 @@ void test_mode() {
   debugln("irr        Rangefinder (right-facing)");
   debugln("lb         Line following (backward)");
   debugln("lf         Line following (forward)");
+  debugln("ocw        Correct offset CW");
+  debugln("occw       Correct offset CCW");
+  debugln("oh         Correct offset Hall");
   debugln("qtr        Calibrate QTR sensors");
   debugln("qtrbwf     Scan for black/white with QTRs (forward)");
   debugln("qtrbwb     Scan for black/white with QTRs (backward)");
@@ -373,7 +378,10 @@ void test_mode() {
       delay(100);
       if (at_magnet) {
         debugln("Magnet detected!");
-        delay(500);
+        claw_shut();
+        delay(100);
+        claw_open();
+        delay(100);
       }
     }
 
@@ -433,6 +441,25 @@ void test_mode() {
       going_forward = true;
       follow_line();
     }
+
+    // Correct Hub Offset
+    else if (state == "ocw") {
+      debugln("Correcting offset cw");
+      correct_hub_offset("cw");
+      state = "";
+    }
+    else if (state == "occw") {
+      debugln("Correcting offset ccw");
+      correct_hub_offset("ccw");
+      state = "";
+    }
+    else if (state == "oh") {
+      debugln("Correcting offset by hall sensor");
+      correct_hub_offset("h");
+      state = "";
+    }
+
+    // QTRs
     else if (state == "qtr") {
       calibrate_qtrs();
       state = "";
@@ -548,6 +575,7 @@ void print_qtr(int num) {
 void start() {
   // get over the line with a timed motor burn
   debugln("Starting");
+  base_speed = 400;
   going_forward = false;
   t = millis();
   while (millis() - t <= 2000) {
@@ -557,30 +585,29 @@ void start() {
 }
 
 void approach_hub() {
-  going_forward = false;
   // follow line until black tape
-  char color = qtr_black_or_white(false);
-  //debugln(color);
-  // print_qtr(2);
-  if (color == 'n') {
+  char color = qtr_black_or_white(true);
+  if (color != 'w') {
     follow_line();
   }
   else {
     stop_motors();
 
     // scoot back a little
+    delay(50); // trying to prevent wheely
+    base_speed = 200;
     t = millis();
-    while (millis() - t < 200) {
+    while (millis() - t < 300) {
       mshield.setM1Speed(100);
       mshield.setM2Speed(100);
     }
     mshield.setM1Speed(0);
     mshield.setM2Speed(0);
+    base_speed = 400;
     state = "turn_hub1"; debugln("Turning Hub");
   }
 }
 
-// TODO: retest with new hall
 void turn_hub_from_entrance() {
 
   // turn hub till magnet sensed
@@ -588,9 +615,10 @@ void turn_hub_from_entrance() {
   instrument_motor_cw();
   while (not read_hall()) {
   }
+  stop_motors();
 
   // Turn the hub to account for offset sensor
-  correct_hub_offset("cw");
+  correct_hub_offset("h");
   if (bounty_color == 'g') {
     state = "enter_canyon"; debugln("Entering Canyon");
   }
@@ -601,14 +629,16 @@ void turn_hub_from_entrance() {
 
 void enter_hub() {
   going_forward = false;
-  int drive_dist = 457; // hub is 18" (457mm) in diamter
-  if (dist_traveled < drive_dist) {
+  reset_encoder_tracking();
+  base_speed = 400;
+  // int drive_dist = 457; // hub is 18" (457mm) in diameter
+  // int drive_dist = 225; // dist for base_speed = 200
+  int drive_dist = 215; // dist for base_speed = 400
+  while (dist_traveled < drive_dist) {
     drive_straight(drive_dist);
   }
-  else {
-    stop_motors();
-    state = "turn_hub2"; debugln("Turning Hub");
-  }
+  stop_motors();
+  state = "turn_hub2"; debugln("Turning Hub");
 }
 
 void turn_hub_from_hub() {
@@ -623,19 +653,23 @@ void turn_hub_from_hub() {
   }
 
   // stop rotation when color is found
-  // char color = read_color();
-  if (read_color() == opposite_color) {
-    correct_hub_offset("h");
-    servoW.write(servoW_up_angle);
-
-   // update state
-   if (bounty_color == 'r') {
-     state = "enter_cave"; debugln("Entering Cave");
-   }
-   else if (bounty_color == 'b') {
-     state = "agate"; debugln("Approaching Gate");
-   }
-    state = "";
+  char color = read_color();
+  if (color == opposite_color) {
+    // come to a full stop to prevent overrotation from momentum
+    stop_motors();
+    delay(250);
+    
+    // update state
+    if (bounty_color == 'r') {
+      correct_hub_offset("cw");
+      state = "enter_cave"; debugln("Entering Cave");
+    }
+    else if (bounty_color == 'b') {
+      correct_hub_offset("compound");
+      state = "agate"; debugln("Approaching Gate");
+    }
+    state = ""; debugln("done with test run");
+    base_speed = 400;
   }
 }
 
@@ -648,16 +682,17 @@ void turn_hub_from_hub() {
 void enter_canyon() {
 
   // get through and hub/enter canyon
-  base_speed = 300;
+  base_speed = 400;
   going_forward = false;
-  if (!at_led()) {
+  bool stop = at_led();
+  if (!stop) {
     follow_line();
   }
   else {
     stop_motors();
+    base_speed = 200;
     state = "face_block"; debugln("Turning to face bounty");
   }
-  base_speed = 200;
 }
 
 // Always turns cw (get compare_freq working)
@@ -762,7 +797,6 @@ void go_home_canyon() {
   // }
 }
 
-
 /***************************
  ** State Functions: Cave **
  ***************************/
@@ -779,30 +813,25 @@ void enter_cave() {
 
 // TODO: what ir value means that the wall is gone?
 void traverse_cave() {
-  // int no_wall_val = 170; // determine this experimentally
+  int no_wall_val = 170; // determine this experimentally
 
-  // if (sharpR.getDist() < no_wall_val) {
-  //   follow_wall();
-  // }
-  // else {
-  //   t = millis();
-  //   while (millis() - t < 250) {
-  //     mshield.setM1Speed(base_speed);
-  //     mshield.setM2Speed(base_speed);
-  //   }
-  //   mshield.setM1Speed(0);
-  //   mshield.setM2Speed(0);
-  //   // state = "mudhorn"; debugln("Killing Mudhorn");
-  //   state = "";
-  // }
-
-  t = millis();
-  while (millis() - t < 1000) {
-    mshield.setM1Speed(base_speed);
-    mshield.setM2Speed(base_speed);
+  int dist = sharpR.getDist();
+  debugln(dist);
+  if (dist < no_wall_val) {
+    follow_wall();
   }
-  mshield.setM1Speed(0);
-  mshield.setM2Speed(0);
+  else {
+    t = millis();
+    while (millis() - t < 250) {
+      mshield.setM1Speed(base_speed);
+      mshield.setM2Speed(base_speed);
+    }
+    mshield.setM1Speed(0);
+    mshield.setM2Speed(0);
+    // state = "mudhorn"; debugln("Killing Mudhorn");
+    state = "";
+  }
+
   // state = "mudhorn"; debugln("Killing Mudhorn");
   state = "";
 }
@@ -810,6 +839,7 @@ void traverse_cave() {
 // TODO: doesn't work
 void mudhorn() {
   servoH.write(servoH_mid_angle);
+  delay(50);
   turn_cw();
   turn_ccw();
   turn_ccw();
@@ -821,7 +851,6 @@ void mudhorn() {
 void get_block_cave() {
   get_block();
   state = "trav_cave2"; debugln("Returning to Hub");
-  
 }
 
 // TODO: test transition between wall and line following
@@ -948,9 +977,9 @@ void go_home() {
 bool at_led() {
   int raw = analogRead(pin_freq_raw);
   int filt = analogRead(pin_freq_filt);
-  int diff = raw - filt;
-  debugln(diff);
-  delay(1);
+  int diff = abs(raw - filt);
+  // debugln(diff);
+  // delay(1);
   if (diff > 20) {
     return true;
   }
@@ -1028,11 +1057,9 @@ String compare_frequency() {
   int raw_min = 0;
   int raw_amp = 0;
 
-  // float time = millis();
   for (int i = 0; i < num_reads; i++) {
     raw = analogRead(pin_freq_raw);
     filt = analogRead(pin_freq_filt);
-    // debug(filt); debug("\t"); debugln(raw);
 
     if (i > 10) {
       filt_max = (filt > filt_max) ? filt : filt_max;
@@ -1045,11 +1072,10 @@ String compare_frequency() {
   filt_amp = filt_max - filt_min;
   amp_diff = raw_amp - filt_amp;
   
-  // debug("filt amp diff: "); debugln(filt_max - filt_min);
-  // debug("raw amp diff: "); debugln(raw_amp);
+  debug("Amp diff: "); debugln(amp_diff);
 
-  // HIGH = Turn left
-  // LOW = Turn right
+  // HIGH = Turn left (diff > 50)
+  // LOW = Turn right (diff < 50)
   if (amp_diff < 50) {
     return "cw";
   }
@@ -1058,28 +1084,35 @@ String compare_frequency() {
   }
 }
 
-// TODO: test once hall effect works again
 void correct_hub_offset(String dir) {
+  servoW.write(servoW_down_angle);
   t = millis();
   if (dir == "cw") {
-    while(millis() - t < 1000) {
+    while(millis() - t < 250) {
       instrument_motor_cw(); 
     }
   }
   else if (dir == "ccw") {
-    while(millis() - t < 1000) {
+    while(millis() - t < 250) {
       instrument_motor_ccw(); 
     }
+  }
+  else if (dir == "compound") {
+    while(millis() - t < 350) {
+      instrument_motor_cw(); 
+    }    
   }
   // offset for hall effect is always ccw and 
   // requires a different length then offset from 
   // color sensors
   else if (dir == "h") {
-    while(millis() - t < 1000) {
+    while(millis() - t < 200) {
       instrument_motor_cw();
     }
   }
   stop_motors();
+  delay(250); // lifting up right away causes hub to keep spinning
+  servoW.write(servoW_up_angle);
 }
 
 // TODO: Figure out proper thresholds in practice
@@ -1095,18 +1128,32 @@ char determine_color(int r, int g, int b) {
   else if (r <= k_threshold && g <= k_threshold && b <= k_threshold) {
     color = 'k';
   }
-  else if (r >= g && r >= b) {
+
+  // This works but has the potential for false positives
+  // else if (r >= g && r >= b) {
+  //   color = 'r';
+  // }
+  // else if (g >= r && g >= b) {
+  //   color = 'g';
+  // }
+  // else if (b >= r && b >= g) {
+  //   color = 'b';
+  // }
+
+  // ensures colors are above black threshold
+  else if (r >= 400 && r >= g && r >= b) {
     color = 'r';
   }
-  else if (g >= r && g >= b) {
+  else if (g >= k_threshold && g >= r && g >= b) {
     color = 'g';
   }
-  else if (b >= r && b >= g) {
+  else if (b >= k_threshold && b >= r && b >= g) {
     color = 'b';
   }
 
-  if (test_state == true) {
-  // if (true == true) {
+
+  // if (test_state == true) {
+  if (true == true) {
     debug(r);
     debug("\t");
     debug(g);
@@ -1152,7 +1199,7 @@ void drive_straight(double drive_dist) {
   double velocity_m1 = (theta_traveled_m1 - theta_traveled_m1_old)/delta_time;
   double velocity_m2 = (theta_traveled_m2 - theta_traveled_m2_old)/delta_time;
   double velocity_average = (velocity_m1 + velocity_m2)/2;
-  debug("vel ave: "); debug(velocity_average); debug('\t');
+  // debug("vel ave: "); debug(velocity_average); debug('\t');
 
   // solve for the next desired radian count
   double theta_d1 = theta_traveled_m1 + velocity_average * (delta_time);
@@ -1181,8 +1228,6 @@ void drive_straight(double drive_dist) {
   // debug("dist trav: "); debug(dist_traveled); debugln(" mm");
 }
 
-// TODO: Make it stop if it looses the line
-// TODO: Get it to recognize white or black
 void follow_line() {
   double Kp = 60, Kd = 60;
   float error_p, error_d, error;
@@ -1502,13 +1547,12 @@ void read_mega() {
 
 bool read_hall() {
   int baseline = 555; // approximate
-  int threshold = 200;
+  int threshold = 400;
   int reading = analogRead(pin_hall);
-  debugln(reading);
   int diff = abs(reading - baseline); // abs diff
   // debug("reading: "); debug(reading); debug("\tdiff: "); debugln(diff);
   if (diff > threshold) {
-    debugln(reading);
+    // debugln(reading); delay(1);
     return true;
   }
   else {
