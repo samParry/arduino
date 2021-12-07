@@ -102,9 +102,9 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "face_block";
+String state = "enter_cave";
 bool test_state = false;
-bool going_forward = false;
+bool going_forward = true;
 char bounty_color = 'b';
 char opposite_color = 'r';
 String turn_dir = "cw";
@@ -648,6 +648,7 @@ void turn_hub_from_hub() {
 void enter_canyon() {
 
   // get through and hub/enter canyon
+  base_speed = 300;
   going_forward = false;
   if (!at_led()) {
     follow_line();
@@ -656,6 +657,7 @@ void enter_canyon() {
     stop_motors();
     state = "face_block"; debugln("Turning to face bounty");
   }
+  base_speed = 200;
 }
 
 // Always turns cw (get compare_freq working)
@@ -765,27 +767,44 @@ void go_home_canyon() {
  ** State Functions: Cave **
  ***************************/
 
-// TODO
 void enter_cave() {
-  reset_encoder_tracking();
-  while (dist_traveled < 100) {
-    drive_straight(100);
+  base_speed = 400;
+  going_forward = true;
+  char color = 'n';
+  while (color != 'w') {
+    follow_line();
   }
-  stop_motors();
   state = "trav_cave1"; debugln("Traversing Cave");
 }
 
 // TODO: what ir value means that the wall is gone?
 void traverse_cave() {
-  int no_wall_val = 170; // determine this experimentally
+  // int no_wall_val = 170; // determine this experimentally
 
-  if (sharpR.getDist() < no_wall_val) {
-    follow_wall();
+  // if (sharpR.getDist() < no_wall_val) {
+  //   follow_wall();
+  // }
+  // else {
+  //   t = millis();
+  //   while (millis() - t < 250) {
+  //     mshield.setM1Speed(base_speed);
+  //     mshield.setM2Speed(base_speed);
+  //   }
+  //   mshield.setM1Speed(0);
+  //   mshield.setM2Speed(0);
+  //   // state = "mudhorn"; debugln("Killing Mudhorn");
+  //   state = "";
+  // }
+
+  t = millis();
+  while (millis() - t < 1000) {
+    mshield.setM1Speed(base_speed);
+    mshield.setM2Speed(base_speed);
   }
-  else {
-    drive_straight(200);
-    state = "mudhorn"; debugln("Killing Mudhorn");
-  }
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);
+  // state = "mudhorn"; debugln("Killing Mudhorn");
+  state = "";
 }
 
 // TODO: doesn't work
@@ -1133,6 +1152,7 @@ void drive_straight(double drive_dist) {
   double velocity_m1 = (theta_traveled_m1 - theta_traveled_m1_old)/delta_time;
   double velocity_m2 = (theta_traveled_m2 - theta_traveled_m2_old)/delta_time;
   double velocity_average = (velocity_m1 + velocity_m2)/2;
+  debug("vel ave: "); debug(velocity_average); debug('\t');
 
   // solve for the next desired radian count
   double theta_d1 = theta_traveled_m1 + velocity_average * (delta_time);
@@ -1141,7 +1161,7 @@ void drive_straight(double drive_dist) {
   //Solve for voltages
   m1_speed = base_speed + Kp * (theta_d1 - theta_traveled_m1);
   m2_speed = base_speed + Kp * (theta_d2 - theta_traveled_m2);
-  // debug(m1_speed); debug('\t'); debugln(m2_speed);
+  debug(m1_speed); debug('\t'); debugln(m2_speed);
 
   // set Motor voltages
   if (going_forward) {
@@ -1203,7 +1223,7 @@ void follow_wall() {
   float error_p, error_d, error;
   current_time = millis();
   delta_time = current_time - last_time;
-  int optimal_dist = 60;   // mm
+  int optimal_dist = 90; // mm
   int dist;
 
   // handles large delta time from first function call
@@ -1238,8 +1258,8 @@ void follow_wall() {
     m2_speed = -(base_speed - error);
   }
   
-  // debug("dist: ");
-  // debug(dist);
+  debug("dist: ");
+  debugln(dist);
   // debug("\terror_p: ");
   // debug(error_p);
   // debug("\terror_d ");
@@ -1530,6 +1550,7 @@ void stop_motors() {
 }
 
 void turn_cw() {
+  base_speed = 200;
   t = millis();
   int turn_time = 1100; // ms
   while (millis() - t < turn_time) {
@@ -1540,6 +1561,7 @@ void turn_cw() {
 }
 
 void turn_ccw() {
+  base_speed = 200;
   t = millis();
   int turn_time = 1150; // ms
   while (millis() - t < turn_time) {
