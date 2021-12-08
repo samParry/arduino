@@ -102,8 +102,8 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "start";
-bool test_state = true;
+String state = "enter_cave";
+bool test_state = false;
 bool going_forward = false;
 char bounty_color = 'g';
 char opposite_color = 'k';
@@ -344,6 +344,7 @@ void test_mode() {
     // Encoders
     else if (state == "el") {
       double drive_dist = 100; // mm
+      base_speed = 400;
       if (dist_traveled < drive_dist) {
         drive_straight(drive_dist);
         debugln(dist_traveled);
@@ -706,12 +707,12 @@ void face_bounty() {
   // detect frequency
   turn_dir = compare_frequency();
 
-  // turn to face bounty
+  // turn to face bounty (opposite of true bounty turn)
   if (turn_dir == "cw") {
-    turn_cw();
+    turn_ccw();
   }
   else if (turn_dir == "ccw") {
-    turn_ccw();
+    turn_cw();
   }
   state = "terminate"; debugln("Terminating Bounty");
 }
@@ -789,14 +790,27 @@ void go_home_canyon() {
 void enter_cave() {
   base_speed = 400;
   going_forward = true;
-  char color = 'n';
+  char color = qtr_black_or_white(true);
   while (color != 'w') {
     follow_line();
   }
-  state = "trav_cave1"; debugln("Traversing Cave");
+  // state = "trav_cave1"; debugln("Traversing Cave");
+  state = "";
 }
 
-// TODO: what ir value means that the wall is gone?
+// void enter_cave() { // encoders don't work
+//   base_speed = 400;
+//   going_forward = true;
+//   reset_encoder_tracking();
+//   while (dist_traveled < 230) {
+//     drive_straight(230);
+//     debugln(dist_traveled);
+//   }
+//   stop_motors();
+//   state = "";
+// }
+
+// TODO: no wall val is dumb. find another way
 void traverse_cave() {
   int no_wall_val = 170; // determine this experimentally
 
@@ -1178,7 +1192,7 @@ void drive_straight(double drive_dist) {
   //Solve for voltages
   m1_speed = base_speed + Kp * (theta_d1 - theta_traveled_m1);
   m2_speed = base_speed + Kp * (theta_d2 - theta_traveled_m2);
-  debug(m1_speed); debug('\t'); debugln(m2_speed);
+  // debug(m1_speed); debug('\t'); debugln(m2_speed);
 
   // set Motor voltages
   if (going_forward) {
