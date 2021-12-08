@@ -790,50 +790,51 @@ void go_home_canyon() {
 void enter_cave() {
   base_speed = 400;
   going_forward = true;
-  char color = qtr_black_or_white(true);
+  char color = 'n';
   while (color != 'w') {
     follow_line();
+    color = qtr_black_or_white(false);
   }
-  // state = "trav_cave1"; debugln("Traversing Cave");
-  state = "";
+  // stop_motors(); // temporary. Want smooth transition with next function
+  state = "trav_cave1"; debugln("Traversing Cave");
 }
 
-// void enter_cave() { // encoders don't work
-//   base_speed = 400;
-//   going_forward = true;
-//   reset_encoder_tracking();
-//   while (dist_traveled < 230) {
-//     drive_straight(230);
-//     debugln(dist_traveled);
+// TODO: no wall val is dumb. find another way
+// void traverse_cave() {
+//   int no_wall_val = 170; // determine this experimentally
+
+//   int dist = sharpR.getDist();
+//   debugln(dist);
+//   if (dist < no_wall_val) {
+//     follow_wall();
 //   }
-//   stop_motors();
+//   else {
+//     t = millis();
+//     while (millis() - t < 250) {
+//       mshield.setM1Speed(base_speed);
+//       mshield.setM2Speed(base_speed);
+//     }
+//     mshield.setM1Speed(0);
+//     mshield.setM2Speed(0);
+//     // state = "mudhorn"; debugln("Killing Mudhorn");
+//     state = "";
+//   }
+
+//   // state = "mudhorn"; debugln("Killing Mudhorn");
 //   state = "";
 // }
 
-// TODO: no wall val is dumb. find another way
 void traverse_cave() {
-  int no_wall_val = 170; // determine this experimentally
-
-  int dist = sharpR.getDist();
-  debugln(dist);
-  if (dist < no_wall_val) {
+  char color = qtr_black_or_white(true);
+  if (color != 'b') {
     follow_wall();
   }
   else {
-    t = millis();
-    while (millis() - t < 250) {
-      mshield.setM1Speed(base_speed);
-      mshield.setM2Speed(base_speed);
-    }
-    mshield.setM1Speed(0);
-    mshield.setM2Speed(0);
-    // state = "mudhorn"; debugln("Killing Mudhorn");
+    stop_motors();
     state = "";
   }
-
-  // state = "mudhorn"; debugln("Killing Mudhorn");
-  state = "";
 }
+
 
 // TODO: doesn't work
 void mudhorn() {
@@ -1248,11 +1249,11 @@ void follow_line() {
 }
 
 void follow_wall() {
-  double Kp = 1, Kd = 1;
+  double Kp = 10, Kd = 10;
   float error_p, error_d, error;
   current_time = millis();
   delta_time = current_time - last_time;
-  int optimal_dist = 90; // mm
+  int optimal_dist = 50; // mm
   int dist;
 
   // handles large delta time from first function call
@@ -1289,6 +1290,7 @@ void follow_wall() {
   
   debug("dist: ");
   debugln(dist);
+  delay(1);
   // debug("\terror_p: ");
   // debug(error_p);
   // debug("\terror_d ");
@@ -1350,7 +1352,7 @@ void instrument_motor_cw() {
 char qtr_black_or_white(bool read) {
   // returns 'w' for white
   // returns 'b' for black
-  // returns 'n' for no
+  // returns 'n' for neither
 
   int white_threshold = 500;
   int black_threshold = 2000;
