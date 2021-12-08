@@ -102,11 +102,11 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "enter_cave";
+String state = "start";
 bool test_state = false;
 bool going_forward = false;
-char bounty_color = 'g';
-char opposite_color = 'k';
+char bounty_color = 'r';
+char opposite_color = 'b';
 String turn_dir = "cw";
 String uno_message;
 
@@ -228,8 +228,14 @@ void loop() {
   else if (state == "block_cave") {
     get_block_cave();
   }
+  else if (state == "back_to_cave") {
+    back_to_cave_walls();
+  }
   else if (state == "trav_cave2") {
     traverse_cave_backward();
+  }
+  else if (state == "cave_enter_hub") {
+    cave_enter_hub();
   }
 
 
@@ -303,6 +309,10 @@ void test_mode() {
   debugln("qtrp2      Print rear facing QTRs");
   debugln("tcw        Turn clockwise");
   debugln("tccw       Turn counter-clockwise");
+  debugln("tcw45      Turn clockwise 45 deg");
+  debugln("tccw45     Turn counter-clockwise 45 deg");
+  debugln("tcw55      Turn clockwise 55 deg");
+  debugln("tccw55     Turn counter-clockwise 55 deg");
   debugln("wb         Follow wall (backward)");
   debugln("wf         Follow wall (forward)");
   debugln("wcw        Turn wheel clockwise");
@@ -500,7 +510,7 @@ void test_mode() {
       delay(250);
     }
 
-    // Turn 90 degrees
+    // Turning
     else if (state == "tcw") {
       turn_cw();
       state = "";
@@ -509,6 +519,22 @@ void test_mode() {
       turn_ccw();
       state = "";
     }
+    else if (state == "tcw45") {
+      turn_cw_45();
+      state = "";
+    }
+    else if (state == "tccw45") {
+      turn_ccw_45();
+      state = "";
+    }
+    else if (state == "tcw55") {
+      turn_cw_55();
+      state = "";
+    }
+    else if (state == "tccw55") {
+      turn_ccw_55();
+      state = "";
+    }        
 
     // Wall Following
     else if (state == "wb") {
@@ -795,34 +821,10 @@ void enter_cave() {
     follow_line();
     color = qtr_black_or_white(false);
   }
+
   // stop_motors(); // temporary. Want smooth transition with next function
   state = "trav_cave1"; debugln("Traversing Cave");
 }
-
-// TODO: no wall val is dumb. find another way
-// void traverse_cave() {
-//   int no_wall_val = 170; // determine this experimentally
-
-//   int dist = sharpR.getDist();
-//   debugln(dist);
-//   if (dist < no_wall_val) {
-//     follow_wall();
-//   }
-//   else {
-//     t = millis();
-//     while (millis() - t < 250) {
-//       mshield.setM1Speed(base_speed);
-//       mshield.setM2Speed(base_speed);
-//     }
-//     mshield.setM1Speed(0);
-//     mshield.setM2Speed(0);
-//     // state = "mudhorn"; debugln("Killing Mudhorn");
-//     state = "";
-//   }
-
-//   // state = "mudhorn"; debugln("Killing Mudhorn");
-//   state = "";
-// }
 
 void traverse_cave() {
   char color = qtr_black_or_white(true);
@@ -831,47 +833,108 @@ void traverse_cave() {
   }
   else {
     stop_motors();
-    state = "";
+    state = "mudhorn"; debugln("Death to the Mudhorn");
   }
 }
 
-
-// TODO: doesn't work
 void mudhorn() {
+  going_forward = true;
+  base_speed = 400;
   servoH.write(servoH_mid_angle);
   delay(50);
+
+  // correct weird off center starting point
+  t = millis();
+  while (millis() - t < 100) {
+    mshield.setM1Speed(300);
+    mshield.setM2Speed(-400);
+  }
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);
+
+  // // drive clear of cave walls
+  // reset_encoder_tracking();
+  // while (dist_traveled < 120) {
+  //   drive_straight(120);
+  // }
+  // stop_motors();
+  t = millis();
+  while (millis() - t < 850) {
+    follow_line();
+  }
+  stop_motors();
+
+  // death to the mudhorn (poke poke)
   turn_cw();
+  time_burst(100, 'f');
+  time_burst(100, 'b');
   turn_ccw();
   turn_ccw();
+  time_burst(100, 'f');
+  time_burst(100, 'b');
   turn_cw();
+
   servoH.write(servoH_up_angle);
   state = "block_cave"; debugln("Collecting Bounty");
 }
 
+// Mechanisms can't reach the bounty
 void get_block_cave() {
-  get_block();
-  state = "trav_cave2"; debugln("Returning to Hub");
+
+  // // back up to ensure straight approach
+  // going_forward = false;
+  // t = millis();
+  // while (millis() - t < 500) {
+  //   follow_line();
+  // }
+  // // stop_motors();
+
+  // // get bounty
+  // get_block();
+  state = "back_to_cave"; debugln("Returning to Walls");
 }
 
-// TODO: test transition between wall and line following
-void traverse_cave_backward() {
-  // get back to cave
+void back_to_cave_walls() {
   going_forward = false;
   char color = qtr_black_or_white(true);
-  while (color != 'w') {
+  if (color != 'w') {
     follow_line();
-    color = qtr_black_or_white(false);
   }
+  else {
+    // inch back a bit more then switch to wall following
+    time_burst(400, 'b');    
+    stop_motors();
+    state = "trav_cave2"; debugln("Returning to Hub");
+  }
+}
 
-  int no_wall_val = 170;
-  if (sharpL.getDist() < no_wall_val) {
+// TODO
+void traverse_cave_backward() {
+  going_forward = false;
+  base_speed = 400;
+  int no_wall_val = 120;
+  int dist = sharpL.getDist();
+  if (dist < no_wall_val) {
     follow_wall();
   }
   else {
     stop_motors();
-    state = ""; debugln("TODO: write next function");
+    state = "cave_enter_hub"; debugln("Re-entering Hub");
   }
 }
+
+void cave_enter_hub() {
+  base_speed = 400;
+  reset_encoder_tracking();
+  int drive_dist = 215;
+  while (dist_traveled < drive_dist) {
+    drive_straight(drive_dist);
+    follow_line();
+  }
+  stop_motors();
+  state = "";
+}
+
 
 /*******************************
  ** State Functions: Compound **
@@ -1133,12 +1196,12 @@ char determine_color(int r, int g, int b) {
   else if (g >= k_threshold && g >= r && g >= b) {
     color = 'g';
   }
-  else if (b >= k_threshold && b >= r && b >= g) {
+  else if (b >= 400 && b >= r && b >= g) {
     color = 'b';
   }
 
-  if (test_state == true) {
-  // if (true == true) {
+  // if (test_state == true) {
+  if (true == true) {
     debug(r);
     debug("\t");
     debug(g);
@@ -1193,7 +1256,7 @@ void drive_straight(double drive_dist) {
   //Solve for voltages
   m1_speed = base_speed + Kp * (theta_d1 - theta_traveled_m1);
   m2_speed = base_speed + Kp * (theta_d2 - theta_traveled_m2);
-  // debug(m1_speed); debug('\t'); debugln(m2_speed);
+  debug(m1_speed); debug('\t'); debugln(m2_speed);
 
   // set Motor voltages
   if (going_forward) {
@@ -1261,7 +1324,6 @@ void follow_wall() {
     delta_time = 52;
   }
 
-  // The distance readings are all way off for some reason.
   // negative error (turn right) - too far
   // positive error (turn left) - too close
   // turning right (m1 > m2)
@@ -1288,9 +1350,9 @@ void follow_wall() {
     m2_speed = -(base_speed - error);
   }
   
-  debug("dist: ");
-  debugln(dist);
-  delay(1);
+  // debug("dist: ");
+  // debugln(dist);
+  // delay(1);
   // debug("\terror_p: ");
   // debug(error_p);
   // debug("\terror_d ");
@@ -1471,7 +1533,7 @@ char read_color() {
   // average the readings
   red = red/num_reads;
   green = green/num_reads;
-  blue = blue/num_reads;
+  blue = blue/num_reads - 150;
 
   return determine_color(red, green, blue);
 }
@@ -1579,24 +1641,88 @@ void stop_motors() {
   }
 }
 
-void turn_cw() {
-  base_speed = 200;
+void time_burst(int time, char dir) {
   t = millis();
-  int turn_time = 1100; // ms
+  while (millis() - t < time) {
+    if (dir == 'f') {
+      mshield.setM1Speed(400);
+      mshield.setM2Speed(400);
+    }
+    else if (dir == 'b') {
+      mshield.setM1Speed(-400);
+      mshield.setM2Speed(-400);      
+    }
+  }
+  mshield.setM1Speed(0);
+  mshield.setM2Speed(0);  
+}
+
+void turn_cw() {
+  // int speed = 200;
+  // int turn_time = 1100;
+  int speed = 400;
+  int turn_time = 550;
+  t = millis();
   while (millis() - t < turn_time) {
-    mshield.setM1Speed(-base_speed);
-    mshield.setM2Speed(base_speed);
+    mshield.setM1Speed(-speed);
+    mshield.setM2Speed(speed);
   }
   stop_motors();
 }
 
-void turn_ccw() {
-  base_speed = 200;
+void turn_cw_45() {
+  int speed = 400;
+  int turn_time = 275;
   t = millis();
-  int turn_time = 1150; // ms
   while (millis() - t < turn_time) {
-    mshield.setM1Speed(base_speed);
-    mshield.setM2Speed(-base_speed);
+    mshield.setM1Speed(-speed);
+    mshield.setM2Speed(speed);
+  }
+  stop_motors();  
+}
+
+void turn_cw_55() {
+  int speed = 400;
+  int turn_time = 335;
+  t = millis();
+  while (millis() - t < turn_time) {
+    mshield.setM1Speed(-speed);
+    mshield.setM2Speed(speed);
+  }
+  stop_motors();  
+}
+
+void turn_ccw() {
+  // int speed = 200;
+  // int turn_time = 1100;
+  int speed = 400;
+  int turn_time = 575;
+  t = millis();
+  while (millis() - t < turn_time) {
+    mshield.setM1Speed(speed);
+    mshield.setM2Speed(-speed);
   }
   stop_motors();
+}
+
+void turn_ccw_45() {
+  int speed = 400;
+  int turn_time = 285; 
+  t = millis();
+  while (millis() - t < turn_time) {
+    mshield.setM1Speed(speed);
+    mshield.setM2Speed(-speed);
+  }
+  stop_motors();
+}
+
+void turn_ccw_55() {
+  int speed = 400;
+  int turn_time = 335;
+  t = millis();
+  while (millis() - t < turn_time) {
+    mshield.setM1Speed(speed);
+    mshield.setM2Speed(-speed);
+  }
+  stop_motors();  
 }
