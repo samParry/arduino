@@ -60,8 +60,8 @@ const int pin_encoder_m2b = 21;
 // *Reflectant Sensor Variables*
 QTRSensors qtr1;
 QTRSensors qtr2;
-int16_t qtr1_biases[] = {322, 274, 264, 236, 269, 264, 274, 286};
-int16_t qtr2_biases[] = {411, 346, 331, 181, 318, 363, 328, 408};
+int16_t qtr1_biases[] = {327, 276, 276, 271, 264, 276, 276, 309};
+int16_t qtr2_biases[] = {374, 326, 326, 138, 319, 360, 326, 405};
 int16_t qtr1_vals[8];
 int16_t qtr2_vals[8];
 
@@ -78,7 +78,7 @@ Servo servoC;
 Servo servoH;
 
 // angle variables define servo range of motion
-int servoW_down_angle = 130;
+int servoW_down_angle = 122;
 int servoW_up_angle = 138;
 int servoC_open_angle = 165;
 int servoC_term_angle = 133;
@@ -86,6 +86,7 @@ int servoC_shut_angle = 128;
 int servoH_down_angle = 0;
 int servoH_mid_angle = 30;
 int servoH_up_angle = 65;
+int servoH_start_angle = 100;
 
 // *Motor variables*
 DualTB9051FTGMotorShieldUnoMega mshield;
@@ -163,7 +164,7 @@ void setup() {
   debugln("Mega Ready");
 
   // *Final commands*
-//   calibrate_qtrs();
+  // calibrate_qtrs();
   last_time = millis();
 }
 
@@ -602,6 +603,7 @@ void print_qtr(int num) {
 void start() {
   // get over the line with a timed motor burn
   debugln("Starting");
+  servoH.write(servoH_start_angle);
   base_speed = 400;
   going_forward = false;
   t = millis();
@@ -660,7 +662,7 @@ void enter_hub() {
   base_speed = 400;
   // int drive_dist = 457; // hub is 18" (457mm) in diameter
   // int drive_dist = 225; // dist for base_speed = 200
-  int drive_dist = 215; // dist for base_speed = 400
+  int drive_dist = 223; // dist for base_speed = 400
   while (dist_traveled < drive_dist) {
     drive_straight(drive_dist);
   }
@@ -675,25 +677,30 @@ void turn_hub_from_hub() {
   if (bounty_color == 'r') {
     instrument_motor_cw();
   }
-  else {
+  else if (bounty_color == 'b') {
     instrument_motor_ccw();
   }
 
   // stop rotation when color is found
   char color = read_color();
   if (color == opposite_color) {
-    // come to a full stop to prevent overrotation from momentum
-    stop_motors();
-    delay(250);
-    
-    // update state
-    if (bounty_color == 'r') {
-      correct_hub_offset("cw");
-      state = "enter_cave"; debugln("Entering Cave");
-    }
-    else if (bounty_color == 'b') {
-      correct_hub_offset("compound");
-      state = "agate"; debugln("Approaching Gate");
+
+    // double check the reading
+    if (read_color() == opposite_color) {
+
+      // come to a full stop to prevent overrotation from momentum
+      stop_motors();
+      delay(250);
+      
+      // update state
+      if (bounty_color == 'r') {
+        correct_hub_offset("cw");
+        state = "enter_cave"; debugln("Entering Cave");
+      }
+      else if (bounty_color == 'b') {
+        correct_hub_offset("compound");
+        state = "agate"; debugln("Approaching Gate");
+      }      
     }
   }
 }
@@ -702,8 +709,6 @@ void turn_hub_from_hub() {
  ** State Functions: Canyon **
  *****************************/
 
-// TODO: This might be callable once hub is rotated into place
-// The canyon doesn't require rotating the hub once on it
 void enter_canyon() {
 
   // get through and hub/enter canyon
@@ -720,7 +725,6 @@ void enter_canyon() {
   }
 }
 
-// Always turns cw (get compare_freq working)
 void face_bounty() {
 
   // inch forward a bit
@@ -735,10 +739,10 @@ void face_bounty() {
 
   // turn to face bounty (opposite of true bounty turn)
   if (turn_dir == "cw") {
-    turn_ccw();
+    turn_cw();
   }
   else if (turn_dir == "ccw") {
-    turn_cw();
+    turn_ccw();
   }
   state = "terminate"; debugln("Terminating Bounty");
 }
@@ -803,7 +807,6 @@ void go_home_canyon() {
   base_speed = 400;
   t = millis();
   while (millis() - t < 1160) {
-    debugln(millis() - t);
     follow_line();
   }
   stop_motors();
@@ -821,8 +824,6 @@ void enter_cave() {
     follow_line();
     color = qtr_black_or_white(false);
   }
-
-  // stop_motors(); // temporary. Want smooth transition with next function
   state = "trav_cave1"; debugln("Traversing Cave");
 }
 
@@ -853,25 +854,20 @@ void mudhorn() {
   mshield.setM2Speed(0);
 
   // // drive clear of cave walls
-  // reset_encoder_tracking();
-  // while (dist_traveled < 120) {
-  //   drive_straight(120);
-  // }
-  // stop_motors();
   t = millis();
-  while (millis() - t < 850) {
+  while (millis() - t < 650) {
     follow_line();
   }
   stop_motors();
 
   // death to the mudhorn (poke poke)
   turn_cw();
-  time_burst(100, 'f');
-  time_burst(100, 'b');
+  // time_burst(100, 'f');
+  // time_burst(100, 'b');
   turn_ccw();
   turn_ccw();
-  time_burst(100, 'f');
-  time_burst(100, 'b');
+  // time_burst(100, 'f');
+  // time_burst(100, 'b');
   turn_cw();
 
   servoH.write(servoH_up_angle);
@@ -902,13 +898,12 @@ void back_to_cave_walls() {
   }
   else {
     // inch back a bit more then switch to wall following
-    time_burst(400, 'b');    
+    time_burst(400, 'b');
     stop_motors();
     state = "trav_cave2"; debugln("Returning to Hub");
   }
 }
 
-// TODO
 void traverse_cave_backward() {
   going_forward = false;
   base_speed = 400;
@@ -926,15 +921,14 @@ void traverse_cave_backward() {
 void cave_enter_hub() {
   base_speed = 400;
   reset_encoder_tracking();
-  int drive_dist = 215;
+  int drive_dist = 230;
   while (dist_traveled < drive_dist) {
     drive_straight(drive_dist);
     follow_line();
   }
   stop_motors();
-  state = "";
+  state = "hub_back"; debugln("Re-orienting Hub");
 }
-
 
 /*******************************
  ** State Functions: Compound **
@@ -944,19 +938,18 @@ void approach_gate() {
   going_forward = true;
   // drop arm and drive to gate
   servoH.write(servoH_down_angle);
-  delay(50);
+  delay(100);
   follow_line();
-  if (sense_gate(200)) {
+  if (sense_gate(210)) {
     stop_motors();
     state = "gate"; debugln("Lifting Gate");
   }
 }
 
-// works
 void raise_gate() {
   // raise gate
   servoH.write(servoH_up_angle);
-  delay(1000);
+  delay(900);
   servoH.write(servoH_mid_angle);
   delay(500);
   state = "block_compound"; debugln("Collecting Bounty");
@@ -970,7 +963,8 @@ void get_block_compound() {
 void compound_to_hub() {
   going_forward = false;
   follow_line();
-  char color = qtr_black_or_white(2);
+  char color = qtr_black_or_white(true);
+  debugln(color);
   if (color == 'w') {
     stop_motors();
     state = "comp_ent_hub"; debugln("Back at Hub");
@@ -978,15 +972,13 @@ void compound_to_hub() {
 }
 
 void compound_enter_hub() {
-  going_forward = false;
-  double drive_dist = 480; // hub is 18" (457mm) in diameter
-  if (dist_traveled < drive_dist) {
+  reset_encoder_tracking();
+  double drive_dist = 225; // hub is 18" (457mm) in diameter
+  while (dist_traveled < drive_dist) {
     drive_straight(drive_dist);
   }
-  else {
-    stop_motors();
-    state = "hub_back"; debugln("Back on Hub");
-  }
+  stop_motors();
+  state = "hub_back"; debugln("Back on Hub");
 }
 
 /*****************************
@@ -1373,13 +1365,13 @@ void get_block() {
   }
   stop_motors();
   
-  // move forward 2cm
-  t = millis();
-  while (millis() - t < 100) {
-    mshield.setM1Speed(base_speed);
-    mshield.setM2Speed(base_speed);
-  }
-  stop_motors();
+  // // move forward 2cm
+  // t = millis();
+  // while (millis() - t < 100) {
+  //   mshield.setM1Speed(base_speed);
+  //   mshield.setM2Speed(base_speed);
+  // }
+  // stop_motors();
   
   claw_shut();
   delay(250); // wait for claw to shut
@@ -1531,9 +1523,9 @@ char read_color() {
   }
 
   // average the readings
-  red = red/num_reads;
+  red = red/num_reads - 200;
   green = green/num_reads;
-  blue = blue/num_reads - 150;
+  blue = blue/num_reads - 200;
 
   return determine_color(red, green, blue);
 }
@@ -1553,6 +1545,7 @@ void read_uno() {
       debug(bounty_color);
       debug("\tOpposite color:\t");
       debugln(opposite_color);
+      state = "start";
     }
     else if (uno_message.length() > 3 && uno_message.substring(0,4) == "test") {
       test_state = !test_state;
@@ -1618,9 +1611,9 @@ void reset_encoder_tracking() {
 
 bool sense_gate(int stop_dist) {
   int dist = sharpF.getDist();
-  //debug("Distance: ");
-  //debugln(dist);
-  //debugln(" mm");
+  // debug("Distance: ");
+  // debugln(dist);
+  // debugln(" mm");
   if (dist <= stop_dist) {
     // double check reading to avoid false positives from noise
     if (sharpF.getDist() <= stop_dist) {
