@@ -103,10 +103,10 @@ double dist_traveled = 0;
 
 // *State Variables*
 String state = "start";
-bool test_state = false;
+bool test_state = true;
 bool going_forward = false;
-char bounty_color = 'b';
-char opposite_color = 'r';
+char bounty_color = 'g';
+char opposite_color = 'k';
 String turn_dir = "cw";
 String uno_message;
 
@@ -668,8 +668,6 @@ void turn_hub_from_hub() {
       correct_hub_offset("compound");
       state = "agate"; debugln("Approaching Gate");
     }
-    state = ""; debugln("done with test run");
-    base_speed = 400;
   }
 }
 
@@ -777,24 +775,11 @@ void go_home_canyon() {
   // The robot should have a line all the way to the start
   base_speed = 400;
   t = millis();
-  while (millis() - t < 2450) {
+  while (millis() - t < 1160) {
     debugln(millis() - t);
     follow_line();
   }
   stop_motors();
-  base_speed = 200;
-  // if (qtr_black_or_white(2) == 'n') {
-  //   follow_line();
-  // }
-  // else {
-  //   reset_encoder_tracking();
-  //   while (dist_traveled < 300) {
-  //     drive_straight(300);
-  //   }
-  //   stop_motors();
-  //   servoH.write(servoH_up_angle);
-  //   state = ""; debugln("Bounty Confirmed");
-  // }
 }
 
 /***************************
@@ -978,8 +963,6 @@ bool at_led() {
   int raw = analogRead(pin_freq_raw);
   int filt = analogRead(pin_freq_filt);
   int diff = abs(raw - filt);
-  // debugln(diff);
-  // delay(1);
   if (diff > 20) {
     return true;
   }
@@ -1070,17 +1053,17 @@ String compare_frequency() {
   }
   raw_amp = raw_max - raw_min;
   filt_amp = filt_max - filt_min;
-  amp_diff = raw_amp - filt_amp;
+  amp_diff = abs(raw_amp - filt_amp);
   
-  debug("Amp diff: "); debugln(amp_diff);
+  // debug("Amp diff: "); debugln(amp_diff);
 
-  // HIGH = Turn left (diff > 50)
-  // LOW = Turn right (diff < 50)
+  // HIGH = Turn left (experimental: 60 -> 200)
+  // LOW = Turn right (experimental: 01 -> 80)
   if (amp_diff < 50) {
-    return "cw";
+    return "ccw";
   }
   else {
-    return "ccw";
+    return "cw";
   }
 }
 
@@ -1115,7 +1098,6 @@ void correct_hub_offset(String dir) {
   servoW.write(servoW_up_angle);
 }
 
-// TODO: Figure out proper thresholds in practice
 char determine_color(int r, int g, int b) {
 
   // determine color
@@ -1129,17 +1111,6 @@ char determine_color(int r, int g, int b) {
     color = 'k';
   }
 
-  // This works but has the potential for false positives
-  // else if (r >= g && r >= b) {
-  //   color = 'r';
-  // }
-  // else if (g >= r && g >= b) {
-  //   color = 'g';
-  // }
-  // else if (b >= r && b >= g) {
-  //   color = 'b';
-  // }
-
   // ensures colors are above black threshold
   else if (r >= 400 && r >= g && r >= b) {
     color = 'r';
@@ -1151,9 +1122,8 @@ char determine_color(int r, int g, int b) {
     color = 'b';
   }
 
-
-  // if (test_state == true) {
-  if (true == true) {
+  if (test_state == true) {
+  // if (true == true) {
     debug(r);
     debug("\t");
     debug(g);
