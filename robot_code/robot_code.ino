@@ -84,6 +84,7 @@ int servoC_open_angle = 165;
 int servoC_term_angle = 133;
 int servoC_shut_angle = 128;
 int servoH_down_angle = 0;
+int servoH_term_angle = 7;
 int servoH_mid_angle = 30;
 int servoH_up_angle = 65;
 int servoH_start_angle = 100;
@@ -103,7 +104,7 @@ double theta_traveled_m2_old = 0;
 double dist_traveled = 0;
 
 // *State Variables*
-String state = "start";
+String state = "";
 bool test_state = false;
 bool going_forward = false;
 char bounty_color = 'r';
@@ -141,7 +142,7 @@ void setup() {
    servoH.attach(pin_servo_h);
    servoW.write(servoW_up_angle);
    servoC.write(servoC_open_angle);
-   servoH.write(servoH_mid_angle);
+   servoH.write(servoH_start_angle);
 
   // *Initialize sensors*
   qtr1.setTypeRC();
@@ -284,6 +285,7 @@ void test_mode() {
   debugln("---------------------------------------------------");
   debugln("at         At LED?");
   debugln("c          Color sensor");
+  debugln("chomp      Chomp at the bit");
   debugln("co         Claw open");
   debugln("cm         Claw mid angle");
   debugln("cs         Claw shut");
@@ -293,7 +295,8 @@ void test_mode() {
   debugln("hd         Hook arm down");
   debugln("hm         Hook arm mid");
   debugln("hu         Hook arm up");
-  debugln("hw         Turn hub wheel");
+  debugln("hs         Hook arm starting angle");
+  debugln("ht         Hook arm terminate angle");
   debugln("irc        Rangefinder (block-facing)");
   debugln("irf        Rangefinder (front-facing)");
   debugln("irl        Rangefinder (left-facing)");
@@ -336,6 +339,12 @@ void test_mode() {
     else if (state == "c") {
       char color = read_color();
       delay(200);
+    }
+
+    // Chomp at the bit
+    else if (state == "chomp") {
+      chomp_at_the_bit();
+      state = "";
     }
 
     // Claw
@@ -413,18 +422,16 @@ void test_mode() {
       debugln(servoH.read());
       state = "";
     }
-
-    // Turn hub wheel
-    else if (state == "hw") {
-      instrument_motor_cw();
-      debugln("Turning CW");
-      delay(2000);
-      instrument_motor_ccw();
-      debugln("Turning CCW");
-      delay(2000);
-      stop_motors();
+    else if (state == "hs") {
+      servoH.write(servoH_start_angle);
+      debugln(servoH.read());
       state = "";
     }
+    else if (state == "ht") {
+      servoH.write(servoH_term_angle);
+      debugln(servoH.read());
+      state = "";
+    }    
 
     // Measure distances (mm)
     else if (state == "irc") {
@@ -603,7 +610,6 @@ void print_qtr(int num) {
 void start() {
   // get over the line with a timed motor burn
   debugln("Starting");
-  servoH.write(servoH_start_angle);
   base_speed = 400;
   going_forward = false;
   t = millis();
@@ -841,7 +847,7 @@ void traverse_cave() {
 void mudhorn() {
   going_forward = true;
   base_speed = 400;
-  servoH.write(servoH_mid_angle);
+  servoH.write(servoH_term_angle);
   delay(50);
 
   // correct weird off center starting point
@@ -855,38 +861,72 @@ void mudhorn() {
 
   // // drive clear of cave walls
   t = millis();
-  while (millis() - t < 650) {
+  while (millis() - t < 700) {
     follow_line();
   }
   stop_motors();
 
   // death to the mudhorn (poke poke)
   turn_cw();
-  // time_burst(100, 'f');
-  // time_burst(100, 'b');
   turn_ccw();
   turn_ccw();
-  // time_burst(100, 'f');
-  // time_burst(100, 'b');
   turn_cw();
 
-  servoH.write(servoH_up_angle);
+  // int speed = 200;
+  // int turn_time = 800;
+  // t = millis();
+  // while (millis() - t < turn_time) { // cw
+  //   mshield.setM1Speed(-speed);
+  //   mshield.setM2Speed(speed);
+  // }
+  // t = millis();
+  // while (millis() - t < turn_time) { // ccw
+  //   mshield.setM1Speed(speed);
+  //   mshield.setM2Speed(-speed);
+  // }
+  // t = millis();
+  // while (millis() - t < turn_time) { // ccw
+  //   mshield.setM1Speed(speed);
+  //   mshield.setM2Speed(-speed);
+  // }
+  // t = millis();
+  // while (millis() - t < turn_time) { // cw
+  //   mshield.setM1Speed(-speed);
+  //   mshield.setM2Speed(speed);
+  // }
+  // stop_motors();
   state = "block_cave"; debugln("Collecting Bounty");
 }
 
 // Mechanisms can't reach the bounty
 void get_block_cave() {
 
-  // // back up to ensure straight approach
-  // going_forward = false;
-  // t = millis();
-  // while (millis() - t < 500) {
-  //   follow_line();
-  // }
-  // // stop_motors();
+  // back up to ensure straight approach
+  going_forward = false;
+  t = millis();
+  while (millis() - t < 500) {
+    follow_line();
+  }
+  stop_motors();
 
-  // // get bounty
-  // get_block();
+  chomp_at_the_bit();
+
+  // terminate bounty (crash into cave)
+  // t = millis();
+  // while (millis() - t < 2500) {
+  //   mshield.setM1Speed(300);
+  //   mshield.setM2Speed(300);
+  // }
+  // mshield.setM1Speed(0);
+  // mshield.setM2Speed(0);
+
+  going_forward = true;
+  t = millis();
+  while (millis() - t < 1000) {
+    follow_line();
+  }
+  stop_motors();
+
   state = "back_to_cave"; debugln("Returning to Walls");
 }
 
@@ -904,6 +944,7 @@ void back_to_cave_walls() {
   }
 }
 
+// On Dec 8th 2021, this function worked first try. Hail. Hail.
 void traverse_cave_backward() {
   going_forward = false;
   base_speed = 400;
@@ -921,7 +962,7 @@ void traverse_cave_backward() {
 void cave_enter_hub() {
   base_speed = 400;
   reset_encoder_tracking();
-  int drive_dist = 230;
+  int drive_dist = 237;
   while (dist_traveled < drive_dist) {
     drive_straight(drive_dist);
     follow_line();
@@ -1082,6 +1123,42 @@ void calibrate_qtrs() {
   debugln();
 }
 
+void chomp_at_the_bit() {
+  claw_shut();
+  servoH.write(servoH_term_angle);
+  delay(200);
+  claw_open();
+  servoH.write(servoH_mid_angle);
+  delay(200);
+  claw_shut();
+  servoH.write(servoH_term_angle);
+  delay(200);
+  claw_open();
+  servoH.write(servoH_mid_angle);
+
+  time_burst(175, 'b');
+  time_burst(175, 'f');
+
+  claw_shut();
+  servoH.write(servoH_term_angle);
+  delay(200);
+  claw_open();
+  servoH.write(servoH_mid_angle);
+  delay(200);  
+  claw_shut();
+  servoH.write(servoH_term_angle);
+  delay(200);
+  claw_open();
+  servoH.write(servoH_mid_angle);
+
+  time_burst(175, 'b');
+  time_burst(175, 'f');
+
+  delay(200);  
+  claw_shut();
+  servoH.write(servoH_term_angle);
+}
+
 void claw_open() {
   servoC.write(servoC_open_angle);
 }
@@ -1151,7 +1228,7 @@ void correct_hub_offset(String dir) {
     }
   }
   else if (dir == "compound") {
-    while(millis() - t < 350) {
+    while(millis() - t < 500) {
       instrument_motor_cw(); 
     }    
   }
